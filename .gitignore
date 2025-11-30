@@ -1,2 +1,2 @@
-./__pycache__/
-./Old_Versions/
+./__pycache__/.*
+./Old_Versions/.*
