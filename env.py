@@ -624,18 +624,18 @@ class DeliveryUAVEnv(ParallelEnv):
     # ================================================================
     def _compute_shared_reward(self) -> float:
         # per-step penalty per active order
-        r = -1.0 * len(self.active_orders)
+        r = -0.01 * len(self.active_orders)
 
         # completion reward (count deliveries this step)
-        r += 50.0 * self._delivered_this_step
+        r += 0.5 * self._delivered_this_step
 
         # delay penalty
         total_wait = sum(o.time_wait for o in self.active_orders)
-        r -= 0.01 * float(total_wait)
+        r -= 0.0001 * float(total_wait)
 
         # overtime penalty (>60 min)
         overtime = sum(1 for o in self.active_orders if o.time_wait > 60)
-        r -= 100.0 * float(overtime)
+        r -= 1.0 * float(overtime)
 
         # hub overflow penalty
         overflow = 0
@@ -643,7 +643,7 @@ class DeliveryUAVEnv(ParallelEnv):
             if len(st.uav_available) > st.max_uavs:
                 overflow += (len(st.uav_available) - st.max_uavs)
         if overflow > 0:
-            r -= 200.0 * float(overflow)
+            r -= 2.0 * float(overflow)
 
         return float(r)
 
