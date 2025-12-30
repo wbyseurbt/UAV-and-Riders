@@ -118,6 +118,8 @@ def main():
     algo = config.build_algo()
 
     log_filename = "training_wsl_gpu.csv"
+    # 创建 checkpoints 目录，防止报错
+    os.makedirs("./checkpoints", exist_ok=True)
     print(f"--- 训练开始! 日志文件: {log_filename} ---")
     
     with open(log_filename, mode='w', newline='') as f:
@@ -136,6 +138,13 @@ def main():
             print(f"Iter {i+1:03d}/{args.iters} | Reward: {mean_rew:.2f} | FPS: {fps:.0f} | TotalSteps: {total_steps}")
             writer.writerow([i+1, mean_rew, mean_len, total_steps, fps])
             f.flush()
+
+            # [关键修改] 保存模型 Checkpoint
+            if (i + 1) % 10 == 0: # 每10轮存一次
+                # 指定保存路径，方便查找
+                save_dir = os.path.abspath(f"./checkpoints/iter_{i+1:04d}")
+                checkpoint_path = algo.save(checkpoint_dir=save_dir)
+                print(f"    --> 模型已保存: {checkpoint_path}")
 
     print("--- 训练结束 ---")
     ray.shutdown()

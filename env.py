@@ -26,7 +26,7 @@ class Order:
         self.start = np.array(start, dtype=int)   # shop (restaurant)
         self.end = np.array(end, dtype=int)       # customer
         self.time_created = int(time_created)
-        self.time_wait = 0
+        self.time_wait = 0                        # waiting time in system since creation
 
         self.status = ORDER_STATUS["UNASSIGNED"]
 
@@ -42,7 +42,7 @@ class Rider:
         self.rid = int(rid)
         self.pos = np.array(pos, dtype=int)  # grid integer
         self.free = True
-        self.carrying_order = None  # Order object
+        self.carrying_order = None  # Order object not id
         self.target_pos = None      # grid integer target
 
         # speed: 0.5 grid/min -> buffer trick
@@ -104,9 +104,9 @@ class DeliveryUAVEnv(ParallelEnv):
     """
     metadata = {"name": "delivery_uav_trainable_v1"}
 
-    def __init__(self, max_steps: int = 300, seed: int | None = None):
+    def __init__(self, max_steps:int = 200, seed: int | None = None):
         super().__init__()
-        self.max_steps = int(max_steps)
+        self.max_steps = max_steps
         self._rng = random.Random(seed)
 
         # world params
@@ -323,8 +323,8 @@ class DeliveryUAVEnv(ParallelEnv):
                 if len(oids_to_load) >= uav.capacity_limit:
                     break
 
-            if not oids_to_load:
-                continue
+            # if not oids_to_load:
+            #     continue
 
             # mark used
             used_uavs.add(uav_id)
@@ -332,10 +332,11 @@ class DeliveryUAVEnv(ParallelEnv):
                 used_orders.add(oid)
 
             # update orders
-            for oid in oids_to_load:
-                o = self.orders[oid]
-                o.status = ORDER_STATUS["IN_UAV"]
-                o.uav_id = uav_id
+            if oids_to_load:
+                for oid in oids_to_load:
+                    o = self.orders[oid]
+                    o.status = ORDER_STATUS["IN_UAV"]
+                    o.uav_id = uav_id
 
             # configure UAV
             uav.orders = list(oids_to_load)
@@ -362,10 +363,14 @@ class DeliveryUAVEnv(ParallelEnv):
             return
 
         order = rider.carrying_order
-        if action == 0:
-            # direct delivery
+
+        is_last_mile = (order.status == ORDER_STATUS["PICKED_BY_R2"])
+
+        # 如果是最后一公里，强制无视 AI 的去站点指令，强制设为直送 (Action 0)
+        if is_last_mile or action == 0:
             rider.target_pos = order.end.copy()
         else:
+            # 只有在第一阶段 (PICKED_BY_R1)，才允许去中转站
             target_sid = action - 1
             if 0 <= target_sid < self.n_stations:
                 rider.target_pos = self.stations[target_sid].pos.copy()
@@ -438,10 +443,17 @@ class DeliveryUAVEnv(ParallelEnv):
                     rider.target_pos = None
                     rider.free = True
                     return
+                
+        if rider.carrying_order is not None and rider.target_pos is None:
+        # 如果到了地方却没法处理（既不是客户家，也不是R1交接），说明走错路了
+        # 强制让他继续去客户家
+            rider.target_pos = rider.carrying_order.end.copy()
 
         # Case 3: rider2 arrives station? (not needed in this simplified last-mile assignment)
         # If not matched, keep idle
         rider.target_pos = None
+
+
 
     # ================================================================
     # Physics: UAVs
@@ -561,9 +573,16 @@ class DeliveryUAVEnv(ParallelEnv):
 
             # nearest station distance
             d_near = min(self._manhattan(r.pos, st.pos) for st in self.stations) / (2 * max(1, self.grid_size))
+            
+            nearest_st = min(self.stations, key=lambda s: self._manhattan(r.pos, s.pos))
+            # 最近站点的拥堵程度
+            # 如果那个站点排队很长，这个值会很大 (接近1.0)
+            # 骑手 AI 看到这个值很高，就会学到：“太堵了，我还是自己送吧”
+            st_congestion = min(1.0, len(nearest_st.orders_waiting) / max(1, cfg.Station_MAX_ORDER_BUFFER))
+
             time_norm = min(1.0, self.time / max(1, self.max_steps))
 
-            obs = np.array([x, y, has_order, wait_norm, dist_to_dest, d_near, time_norm, 0.0, 0.0, 0.0], dtype=np.float32)
+            obs = np.array([x, y, has_order, wait_norm, dist_to_dest, d_near, time_norm, st_congestion, 0.0, 0.0], dtype=np.float32)
             return obs
 
         if agent.startswith("station_"):
@@ -573,9 +592,9 @@ class DeliveryUAVEnv(ParallelEnv):
             x = st.pos[0] / max(1, self.grid_size)
             y = st.pos[1] / max(1, self.grid_size)
 
-            uav_avail = len(st.uav_available) / max(1, cfg.Station_MAX_UAVS)
-            waiting = len(st.orders_waiting) / max(1, cfg.Station_MAX_ORDER_BUFFER)
-            to_deliver = len(st.orders_to_deliver) / max(1, cfg.Station_MAX_ORDER_BUFFER)
+            uav_avail = min(1.0, len(st.uav_available) / max(1, cfg.Station_MAX_UAVS))
+            waiting = min(1.0, len(st.orders_waiting) / max(1, cfg.Station_MAX_ORDER_BUFFER))
+            to_deliver = min(1.0, len(st.orders_to_deliver) / max(1, cfg.Station_MAX_ORDER_BUFFER))
 
             if st.uav_available:
                 bats = [self.uavs[uid].battery for uid in st.uav_available]
@@ -585,20 +604,20 @@ class DeliveryUAVEnv(ParallelEnv):
 
             if st.orders_waiting:
                 waits = [self.orders[oid].time_wait for oid in st.orders_waiting]
-                min_wait = min(1.0, float(min(waits)) / 60.0)
+                max_wait = min(1.0, float(max(waits)) / 60.0)
             else:
-                min_wait = 0.0
+                max_wait = 0.0
 
             time_norm = min(1.0, self.time / max(1, self.max_steps))
 
             obs = np.array(
-                [x, y, uav_avail, waiting, to_deliver, avg_bat, min_wait, time_norm, 0.0, 0.0, 0.0, 0.0],
+                [x, y, uav_avail, waiting, to_deliver, avg_bat, max_wait, time_norm, 0.0, 0.0, 0.0, 0.0],
                 dtype=np.float32
             )
             return obs
 
         # fallback
-        return np.zeros((4,), dtype=np.float32)
+        return np.zeros((12,), dtype=np.float32)
 
     # ================================================================
     # Reward (shared) aligned with paper components (simplified)
