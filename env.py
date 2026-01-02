@@ -645,7 +645,7 @@ class DeliveryUAVEnv(ParallelEnv):
         r -= 1.0 * float(overtime)
 
         # UAV fly cost
-        UAV_LAUNCH_COST = 0.001  # 可调超参数：每次起飞的成本
+        UAV_LAUNCH_COST = 0.0001  # 可调超参数：每次起飞的成本
         r -= UAV_LAUNCH_COST * float(self._uav_launch_this_step)
 
         # hub overflow penalty

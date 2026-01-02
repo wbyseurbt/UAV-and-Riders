@@ -5,8 +5,9 @@ UAV_capacity_limit = 5          # 无人机最大载客量
 
 World_grid_size = 20                # 网格大小
 
-World_locs_stations = [(5, 5), (15, 15), (5, 15)]  # 充电站位置
-World_locs_shops = [(0, 0), (20, 20), (0, 20), (20, 0), (10, 10)]  # 商店位置
+grid_num = 3
+World_locs_stations = [(grid_num, grid_num), (World_grid_size-grid_num, World_grid_size-grid_num), (grid_num, World_grid_size-grid_num), (World_grid_size-grid_num, grid_num),  (World_grid_size/2, World_grid_size/2)]  # 充电站位置
+World_locs_shops = [(0, 2), (2, 0), (18, 20), (20, 18), (15, 3),(3, 15),(5, 17),(17, 5)]  # 商店位置
 
 World_n_riders = 10                 # 骑手数量
 World_n_uav_each_station = 5        # 每个站点无人机数量
