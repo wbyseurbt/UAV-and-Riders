@@ -1,2 +1,7 @@
 __pycache__/
 Old_version/
+checkpoints/
+*.png
+*.jpg
+*.csv
+*.log
