@@ -180,6 +180,9 @@ class DeliveryUAVEnv(ParallelEnv):
         # bookkeeping for reward
         self._delivered_this_step = 0
 
+        # UAV launch cost bookkeeping
+        self._uav_launch_this_step = 0
+
     # RLlib convenience
     def observation_space(self, agent):
         return self.observation_spaces[agent]
@@ -222,6 +225,7 @@ class DeliveryUAVEnv(ParallelEnv):
     def step(self, actions):
         self.time += 1
         self._delivered_this_step = 0
+        self._uav_launch_this_step = 0
 
         # update waiting time
         for o in self.active_orders:
@@ -343,6 +347,9 @@ class DeliveryUAVEnv(ParallelEnv):
             uav.station_id = None
             uav.target_station = target_sid
             uav.state = "FLYING"
+
+            # UAV 起飞计数（用于奖励函数中的成本项）
+            self._uav_launch_this_step += 1
 
             # update station buffers
             station.uav_available.remove(uav_id)
@@ -636,6 +643,10 @@ class DeliveryUAVEnv(ParallelEnv):
         # overtime penalty (>60 min)
         overtime = sum(1 for o in self.active_orders if o.time_wait > 60)
         r -= 1.0 * float(overtime)
+
+        # UAV fly cost
+        UAV_LAUNCH_COST = 0.001  # 可调超参数：每次起飞的成本
+        r -= UAV_LAUNCH_COST * float(self._uav_launch_this_step)
 
         # hub overflow penalty
         overflow = 0
