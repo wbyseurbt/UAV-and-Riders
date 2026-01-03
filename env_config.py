@@ -16,6 +16,6 @@ World_n_uavs = World_n_stations * World_n_uav_each_station  # 总无人机数量
 World_n_shops = len(World_locs_shops)                       # 商店数量
 
 Station_MAX_UAVS = 10          # 站点最大无人机容量
-Station_MAX_ORDER_BUFFER = 100      # 充电速率，单位：电
+Station_MAX_ORDER_BUFFER = 50      # 充电速率，单位：电
 
 Station_MAX_CONCURRENT_LAUNCH = 3  # 最大同时起飞无人机数量

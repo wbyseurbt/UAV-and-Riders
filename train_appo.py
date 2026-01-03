@@ -108,7 +108,7 @@ def main():
         .training(
             # APPO 每次更新的 Batch Size
             train_batch_size=8192, 
-            
+            entropy_coeff=0.001,
             lr=1e-4, 
             grad_clip=40.0,
             learner_queue_size=16,

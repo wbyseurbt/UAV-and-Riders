@@ -135,11 +135,21 @@ class DeliveryUAVEnv(ParallelEnv):
         for a in self.rider_agents:
             self.action_spaces[a] = spaces.Discrete(1 + self.n_stations)
 
-        # Station: 【修改点】改为简单的离散动作
-        # 含义：0=不发射, 1=发往Station_0, 2=发往Station_1, ...
-        # Agent 只需要决定目标站点，不需要管选哪个飞机、装哪个货
+        # Station: fixed MultiDiscrete via LOCAL indices
+        # single launch slot dims:
+        #  [uav_pick, target_station, order_pick_1, ..., order_pick_cap]
+        # uav_pick: 0=noop, 1..Station_MAX_UAVS means pick that index in station.uav_available
+        # order_pick: 0=empty, 1..Station_MAX_ORDER_BUFFER means pick that index in station.orders_waiting
+        max_uav_pick = int(cfg.Station_MAX_UAVS) + 1
+        max_order_pick = int(cfg.Station_MAX_ORDER_BUFFER) + 1
+        target_station_dim = self.n_stations
+
+        single_launch_dims = [max_uav_pick, target_station_dim] + [max_order_pick] * self.uav_cap
+        self.single_action_len = len(single_launch_dims)
+        full_station_dims = single_launch_dims * self.concurrent_launches
+
         for a in self.station_agents:
-            self.action_spaces[a] = spaces.Discrete(1 + self.n_stations)
+            self.action_spaces[a] = spaces.MultiDiscrete(full_station_dims)
 
         # ---------------- Observation spaces ----------------
         # Keep them compact & fixed-size for training
@@ -151,14 +161,13 @@ class DeliveryUAVEnv(ParallelEnv):
         # Station obs (float32, shape=(12,)):
         # [x,y, num_uav_avail_norm, num_waiting_norm, num_to_deliver_norm,
         #  avg_battery_avail, min_wait_norm, time_norm, dummy...]
-        self._station_obs_dim = 6 + (self.n_stations * 2)
+        self._station_obs_dim = 12
 
         self.observation_spaces = {}
         for a in self.rider_agents:
             self.observation_spaces[a] = spaces.Box(low=-1.0, high=1.0, shape=(self._rider_obs_dim,), dtype=np.float32)
         for a in self.station_agents:
-            self.observation_spaces[a] = spaces.Box(low=-1.0, high=float('inf'), shape=(self._station_obs_dim,), dtype=np.float32)
-
+            self.observation_spaces[a] = spaces.Box(low=-1.0, high=1.0, shape=(self._station_obs_dim,), dtype=np.float32)
 
         # runtime containers
         self.time = 0
@@ -267,97 +276,89 @@ class DeliveryUAVEnv(ParallelEnv):
 
         return obs, rewards, terminated, truncated, infos
 
-
-    def _classify_order_target(self, order_obj, current_sid):
-        """
-        根据订单终点，判断它应该被分流到哪个站点（除了当前站点）。
-        逻辑：找到离订单终点最近的站点作为 Gateway。
-        """
-        best_sid = -1
-        min_dist = float('inf')
-
-        for st in self.stations:
-            # 不能发给自己
-            if st.sid == current_sid:
-                continue
-            
-            # 计算该站点到订单终点的距离
-            d = self._manhattan(st.pos, order_obj.end)
-            if d < min_dist:
-                min_dist = d
-                best_sid = st.sid
-        
-        # 返回应当投递的目标站点 ID
-        return best_sid
-
-
     # ================================================================
     # Station action: batch launch processing (LOCAL indices -> GLOBAL ids)
     # ================================================================
-    def _process_station_action(self, sid, action):
-        target_idx = int(action) - 1 # 动作 k 对应 Station k-1
-
-        # 1. 基础检查
-        if target_idx < 0: return # NoOp
-        if target_idx == sid: return # 目标是自己
-        if target_idx >= self.n_stations: return
-
+    def _process_station_action(self, sid, action_vec):
         station = self.stations[sid]
 
-        if not station.uav_available: return
-        if not station.orders_waiting: return
+        used_uavs = set()
+        used_orders = set()
 
-        # 2. 筛选订单：只装填那些“分类结果”为 target_idx 的订单
-        # 也就是：Agent 决定发往 Station B，那么只有去 Station B 的货才有资格上飞机
-        candidates = []
-        for oid in station.orders_waiting:
-            o = self.orders[oid]
-            best_gateway = self._classify_order_target(o, sid)
-            
-            # 【关键】只有分类匹配的才选
-            if best_gateway == target_idx:
-                candidates.append(oid)
-        
-        # 如果没有匹配的货，说明 Agent 决策失误（发空车），直接返回，不做惩罚（或者你可以给个微小的 step 惩罚）
-        # 但通常这里直接 return 相当于浪费了一个 step，对于 RL 已经是惩罚了
-        if not candidates:
-            return
+        action_vec = np.asarray(action_vec, dtype=int).tolist()
 
-        # 3. 选飞机
-        uav_battery_max = -1.0
-        uav_battery_max_id = -1
-        for uav_id in station.uav_available:
+        for k in range(self.concurrent_launches):
+            start = k * self.single_action_len
+            end = (k + 1) * self.single_action_len
+            sub = action_vec[start:end]
+
+            uav_pick = int(sub[0])        # 0=noop
+            target_sid = int(sub[1])      # 0..n_stations-1
+            order_picks = [int(x) for x in sub[2:]]
+
+            if uav_pick == 0:
+                continue
+            if target_sid < 0 or target_sid >= self.n_stations:
+                continue
+
+            # map local UAV index -> global UAV id
+            local_uav_idx = uav_pick - 1
+            if local_uav_idx < 0 or local_uav_idx >= len(station.uav_available):
+                continue
+            uav_id = station.uav_available[local_uav_idx]
+
+            if uav_id in used_uavs:
+                continue
             uav = self.uavs[uav_id]
-            if uav.battery >= uav_battery_max:
-                uav_battery_max = uav.battery
-                uav_battery_max_id = uav_id
-                
-        uav_id = uav_battery_max_id
-        uav = self.uavs[uav_id]
-        if uav.battery < 0.1: return
 
-        # 4. 装填 (在匹配的 candidates 里，优先装等待最久的)
-        # 按等待时间排序
-        candidates.sort(key=lambda oid: self.orders[oid].time_wait, reverse=True)
-        
-        oids_to_load = candidates[:uav.capacity_limit]
+            # battery constraint (paper uses 0.1 bmax)
+            if uav.battery < 0.1:
+                continue
 
-        # --- 执行起飞 (复制之前的逻辑) ---
-        station.uav_available.remove(uav_id)
-        station.orders_waiting = [x for x in station.orders_waiting if x not in oids_to_load]
+            # collect orders to load (map local indices -> global order ids)
+            oids_to_load = []
+            for op in order_picks:
+                if op == 0:
+                    continue
+                local_order_idx = op - 1
+                if local_order_idx < 0 or local_order_idx >= len(station.orders_waiting):
+                    continue
+                oid = station.orders_waiting[local_order_idx]
+                if oid in used_orders:
+                    continue
+                oids_to_load.append(oid)
+                if len(oids_to_load) >= uav.capacity_limit:
+                    break
 
-        for oid in oids_to_load:
-            o = self.orders[oid]
-            o.status = ORDER_STATUS["IN_UAV"]
-            o.uav_id = uav_id
+            # if not oids_to_load:
+            #     continue
 
-        uav.orders = list(oids_to_load)
-        uav.station_id = None
-        uav.target_station = target_idx
-        uav.state = "FLYING"
+            # mark used
+            used_uavs.add(uav_id)
+            for oid in oids_to_load:
+                used_orders.add(oid)
 
-        self._uav_launch_this_step += 1
- 
+            # update orders
+            if oids_to_load:
+                for oid in oids_to_load:
+                    o = self.orders[oid]
+                    o.status = ORDER_STATUS["IN_UAV"]
+                    o.uav_id = uav_id
+
+            # configure UAV
+            uav.orders = list(oids_to_load)
+            uav.station_id = None
+            uav.target_station = target_sid
+            uav.state = "FLYING"
+
+            # UAV 起飞计数（用于奖励函数中的成本项）
+            self._uav_launch_this_step += 1
+
+            # update station buffers
+            station.uav_available.remove(uav_id)
+            # remove loaded orders (by id)
+            station.orders_waiting = [x for x in station.orders_waiting if x not in oids_to_load]
+
     # ================================================================
     # Rider action: set target for carried order
     # ================================================================
@@ -573,28 +574,6 @@ class DeliveryUAVEnv(ParallelEnv):
             rider.carrying_order = o
             rider.target_pos = None  # DECISION POINT (RL sets next target)
 
-
-
-    def _get_demand_groups(self, station_obj):
-        """
-        统计各目标分组的：订单总量、总等待时间
-        返回: (counts_list, wait_sums_list) 长度均为 n_stations
-        """
-        counts = [0.0] * self.n_stations
-        wait_sums = [0.0] * self.n_stations
-        
-        current_sid = station_obj.sid
-
-        for oid in station_obj.orders_waiting:
-            o = self.orders[oid]   
-            # 分类最近的
-            target_sid = self._classify_order_target(o, current_sid)
-            
-            if target_sid != -1:
-                counts[target_sid] += 1.0
-                wait_sums[target_sid] += float(o.time_wait)
-        
-        return counts, wait_sums
     # ================================================================
     # Observations (normalized to [-1, 1] roughly)
     # ================================================================
@@ -633,64 +612,35 @@ class DeliveryUAVEnv(ParallelEnv):
             sid = int(agent.split("_")[1])
             st = self.stations[sid]
 
-            # --- 1. 自身基础信息 ---
             x = st.pos[0] / max(1, self.grid_size)
             y = st.pos[1] / max(1, self.grid_size)
-            time_norm = min(1.0, self.time / max(1, self.max_steps))
-            
-            # 自身总积压量 (Normalized)
-            total_waiting_norm = min(1.0, len(st.orders_waiting) / max(1, cfg.Station_MAX_ORDER_BUFFER))
 
-            # --- 2. 资源信息 (User Request) ---
-            
-            # A. 可行无人机数量 (Normalized)
-            # 假设最大UAV数量是 Station_MAX_UAVS
-            uav_count_norm = len(st.uav_available) / max(1, cfg.Station_MAX_UAVS)
-            
-            # B. 无人机中最满的电池量
-            # 如果没有无人机，则是 0
+            uav_avail = min(1.0, len(st.uav_available) / max(1, cfg.Station_MAX_UAVS))
+            waiting = min(1.0, len(st.orders_waiting) / max(1, cfg.Station_MAX_ORDER_BUFFER))
+            to_deliver = min(1.0, len(st.orders_to_deliver) / max(1, cfg.Station_MAX_ORDER_BUFFER))
+
             if st.uav_available:
-                batteries = [self.uavs[uid].battery for uid in st.uav_available]
-                max_battery = max(batteries)
+                bats = [self.uavs[uid].battery for uid in st.uav_available]
+                avg_bat = float(np.mean(bats))
             else:
-                max_battery = 0.0
+                avg_bat = 0.0
 
-            # --- 3. 分组需求信息 (User Request) ---
-            # 获取分组统计
-            raw_counts, raw_waits = self._get_demand_groups(st)
-            
-            demand_features = []
-            
-            # 归一化参数
-            MAX_BUFFER = max(1, cfg.Station_MAX_ORDER_BUFFER)
-            # 这是一个估计值：假设 buffer 满载且平均等待 30 分钟，用于归一化总等待时间
-            # 实际上稍微大一点没关系，只要网络能读到相对大小即可
-            MAX_TOTAL_WAIT_ESTIMATE = MAX_BUFFER * 60.0 
+            if st.orders_waiting:
+                waits = [self.orders[oid].time_wait for oid in st.orders_waiting]
+                max_wait = min(1.0, float(max(waits)) / 60.0)
+            else:
+                max_wait = 0.0
 
-            for k in range(self.n_stations):
-                # 如果 k == sid (自己)，理论上应该是 0，因为 _classify 不会分给自己
-                # 但保留位置以便输入维度固定
-                
-                # c: 该组总订单量 (Normalized)
-                c_norm = min(1.0, raw_counts[k] / MAX_BUFFER)
-                
-                # w: 该组总等待时间 (Normalized)
-                w_norm = min(1.0, raw_waits[k] / MAX_TOTAL_WAIT_ESTIMATE)
-                
-                demand_features.append(c_norm)
-                demand_features.append(w_norm)
+            time_norm = min(1.0, self.time / max(1, self.max_steps))
 
-            # --- 4. 拼接 ---
-            # [x, y, time, total_wait, uav_count, max_bat, ...groups...]
-            base_obs = [x, y, time_norm, total_waiting_norm, uav_count_norm, max_battery]
-            
-            final_obs = np.array(base_obs + demand_features, dtype=np.float32)
-            
-            return final_obs
+            obs = np.array(
+                [x, y, uav_avail, waiting, to_deliver, avg_bat, max_wait, time_norm, 0.0, 0.0, 0.0, 0.0],
+                dtype=np.float32
+            )
+            return obs
 
+        # fallback
         return np.zeros((12,), dtype=np.float32)
-    
-
 
     # ================================================================
     # Reward (shared) aligned with paper components (simplified)
