@@ -125,7 +125,7 @@ if __name__ == "__main__":
         ray.shutdown()
     ray.init(ignore_reinit_error=True, log_to_driver=False)
 
-    CHECKPOINT_PATH = r"D:\Study\Professional_Knowledge\RL\UAV-and-Riders\checkpoints\iter_0160"
+    CHECKPOINT_PATH = r"D:\Study\Professional_Knowledge\RL\UAV-and-Riders\checkpoints\iter_0500"
 
     print("准备开始对比测试...")
 

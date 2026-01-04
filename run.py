@@ -143,7 +143,12 @@ def animate(frame, env, agent_model):
             if r.target_pos is not None:
                 ax.plot([r.pos[0], r.target_pos[0]], [r.pos[1], r.target_pos[1]], 
                         color='blue', linestyle=':', linewidth=0.8, alpha=0.4)
-
+            if r.carrying_order is not None:
+                # 获取订单终点
+                dest = r.carrying_order.end
+                # 绘制粗实线 (linewidth=2.0)
+                ax.plot([r.pos[0], dest[0]], [r.pos[1], dest[1]], 
+                        color='#0000ff', linestyle='-', linewidth=2.0, alpha=0.15, label='Delivery Route')
     if r_free_x: ax.scatter(r_free_x, r_free_y, c='lime', s=60, label='Rider(Free)', edgecolors='green', zorder=5)
     if r_busy_x: ax.scatter(r_busy_x, r_busy_y, c='blue', s=60, label='Rider(Busy)', edgecolors='white', zorder=5)
 
@@ -160,6 +165,16 @@ def animate(frame, env, agent_model):
             if len(u.orders) > 0:
                 u_fly_load_x.append(u.pos[0])
                 u_fly_load_y.append(u.pos[1])
+
+                for oid in u.orders:
+                    # 注意：u.orders 存的是 ID，需要去 env.orders 里找对象
+                    if 0 <= oid < len(env.orders):
+                        target_order = env.orders[oid]
+                        dest = target_order.end
+                        # 绘制紫色粗线，表示这架无人机里的货是要去那里的
+                        # alpha 设置低一点(0.15)，因为无人机可能带多个货，线多了会乱
+                        ax.plot([u.pos[0], dest[0]], [u.pos[1], dest[1]], 
+                                color='purple', linestyle='-', linewidth=1.5, alpha=0.15)
             else:
                 u_fly_empty_x.append(u.pos[0])
                 u_fly_empty_y.append(u.pos[1])
@@ -216,7 +231,7 @@ def run():
     # 必须指向包含 'policies' 文件夹的那一层，例如 'iter_0080'
     # -----------------------------------------------------------
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    CHECKPOINT_PATH = os.path.join(BASE_DIR, "checkpoints", "iter_0160") # <-- 修改这里
+    CHECKPOINT_PATH = os.path.join(BASE_DIR, "checkpoints", "iter_0500") # <-- 修改这里
     
     if not os.path.exists(CHECKPOINT_PATH):
         print(f"错误: 找不到路径 {CHECKPOINT_PATH}")
