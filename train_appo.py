@@ -47,7 +47,7 @@ def get_current_prob(iteration):
     - 250+ 轮: 保持 10% (保留一点点启发式引导，或者设为0完全自主)
     """
     length_period1 = 100
-    length_period2 = 250
+    length_period2 = 200
     min_pro = 0
     if iteration < length_period1:
         return 1.0

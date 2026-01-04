@@ -182,6 +182,7 @@ class DeliveryUAVEnv(ParallelEnv):
 
         # handoff bookkeeping
         self._handoff_this_step = 0
+        self._handoff_optimal_this_step = 0
 
     # RLlib convenience
     def observation_space(self, agent):
@@ -228,6 +229,7 @@ class DeliveryUAVEnv(ParallelEnv):
         self._uav_launch_this_step = 0
         self._uav_order_balance = 0
         self._handoff_this_step = 0
+        self._handoff_optimal_this_step = 0
         # update waiting time
         for o in self.active_orders:
             o.time_wait += 1
@@ -406,7 +408,9 @@ class DeliveryUAVEnv(ParallelEnv):
             order = rider.carrying_order
             is_last_mile = (order.status == ORDER_STATUS["PICKED_BY_R2"])
             force_station = False
-            if self._rng.random() < self.force_station_prob: 
+            # if self._rng.random() < self.force_station_prob: 
+            #     force_station = True
+            if self.force_station_prob == 1.0:
                 force_station = True
             # 如果是最后一公里，强制无视 AI 的去站点指令，强制设为直送 (Action 0)
             if is_last_mile :
@@ -427,8 +431,20 @@ class DeliveryUAVEnv(ParallelEnv):
             else:
             # 只有在第一阶段 (PICKED_BY_R1)，才允许去中转站
                 target_sid = action - 1
+
                 if 0 <= target_sid < self.n_stations:
                     rider.target_pos = self.stations[target_sid].pos.copy()
+                    
+                best_sid = -1
+                min_dist = float('inf')
+                for st in self.stations:
+                    d = self._manhattan(rider.pos, st.pos)
+                    if d < min_dist:
+                        min_dist = d
+                        best_sid = st.sid
+                if best_sid != -1 and target_sid == best_sid:
+                    self._handoff_optimal_this_step += 1
+                    
                 return
                 
 
@@ -795,8 +811,10 @@ class DeliveryUAVEnv(ParallelEnv):
 
         # UAV order balance reward
         r += 0.003 * float(self._uav_order_balance)
-
-        r += 0.01 *self.force_station_prob * self._handoff_this_step
+        if self.force_station_prob == 1:
+            r += 0.01 * self._handoff_this_step
+        elif self.force_station_prob > 0:
+            r += 0.01 * self._handoff_optimal_this_step
         return float(r)
 
     @staticmethod
