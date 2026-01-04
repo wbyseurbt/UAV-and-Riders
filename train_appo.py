@@ -33,9 +33,47 @@ def policy_mapping_fn(agent_id, episode, **kwargs):
         return "rider_policy"
     return "station_policy"
 
+
+
+# ==========================================
+# [新增] 课程学习辅助函数
+# ==========================================
+def get_current_prob(iteration):
+    """
+    计算当前强制去站点的概率 (Curriculum Schedule)
+    策略:
+    - 0-100 轮: 100% 强制 (让 UAV 疯狂刷数据)
+    - 100-250 轮: 线性衰减 (从 1.0 降到 0.1)
+    - 250+ 轮: 保持 10% (保留一点点启发式引导，或者设为0完全自主)
+    """
+    length_period1 = 100
+    length_period2 = 250
+    min_pro = 0
+    if iteration < length_period1:
+        return 1.0
+    elif iteration < length_period2:
+        # 线性插值: 随着 iter 增加，prob 减小
+        return max(min_pro, 1.0 - (iteration - length_period1) / (length_period2 - length_period1) * (1-min_pro))
+    else:
+        return min_pro 
+
+def update_env_prob(env, context):
+    """
+    这个函数会被发送到每个 Worker 里执行
+    负责找到底层的 DeliveryUAVEnv 并修改概率
+    """
+    # 尝试穿透 ParallelPettingZooEnv 包装器找到原始环境
+    base_env = getattr(env, "par_env", None) or getattr(env, "unwrapped", None) or env
+    
+    # 调用 env.py 中定义的接口
+    if hasattr(base_env, "set_force_station_prob"):
+        base_env.set_force_station_prob(context["prob"])
+
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--iters", type=int, default=500)
+    parser.add_argument("--iters", type=int, default=3000)
     parser.add_argument("--max-steps", type=int, default=200)
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
@@ -138,6 +176,19 @@ def main():
         print(f"--- 训练开始! 日志: {log_filename} ---")
         
         for i in range(args.iters):
+            # ================= [新增] 动态调整概率 =================
+            # 1. 计算当前轮次的概率
+            current_prob = get_current_prob(i)
+            
+            # 2. 广播给所有 Worker (并行环境)
+            # 新版 Ray 使用 env_runner_group 替代 workers
+            algo.env_runner_group.foreach_env(
+                lambda env: update_env_prob(env, {"prob": current_prob})
+            )
+            # =======================================================
+
+
+
             result = algo.train()
             
             metrics = result.get("env_runners", {}) or result

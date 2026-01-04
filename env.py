@@ -177,6 +177,12 @@ class DeliveryUAVEnv(ParallelEnv):
         # reward for uav balance
         self._uav_order_balance = 0
 
+        # to train uavs networks
+        self.force_station_prob = 0.0
+
+        # handoff bookkeeping
+        self._handoff_this_step = 0
+
     # RLlib convenience
     def observation_space(self, agent):
         return self.observation_spaces[agent]
@@ -221,6 +227,7 @@ class DeliveryUAVEnv(ParallelEnv):
         self._delivered_this_step = 0
         self._uav_launch_this_step = 0
         self._uav_order_balance = 0
+        self._handoff_this_step = 0
         # update waiting time
         for o in self.active_orders:
             o.time_wait += 1
@@ -294,6 +301,8 @@ class DeliveryUAVEnv(ParallelEnv):
         return best_sid
 
 
+    def set_force_station_prob(self, prob: float):
+        self.force_station_prob = float(prob)
     # ================================================================
     # Station action: batch launch processing (LOCAL indices -> GLOBAL ids)
     # ================================================================
@@ -381,26 +390,49 @@ class DeliveryUAVEnv(ParallelEnv):
         rider = self.riders[rid]
         if rider.target_pos is not None:
             return
+
         if rider.carrying_order is None:
-            # simple behavior: move towards nearest station if action > 0
+            # 如果骑手没单子，简单的逻辑是：
+            # 如果动作指向站点(action > 0)，就去那个站点（调度空闲骑手）
+            # 否则原地不动或 return
             if action > 0:
                 sid = action - 1
                 if 0 <= sid < self.n_stations:
                     rider.target_pos = self.stations[sid].pos.copy()
+            # 【重要】处理完空闲逻辑后必须 return，不能往下走！
             return
-
-        order = rider.carrying_order
-
-        is_last_mile = (order.status == ORDER_STATUS["PICKED_BY_R2"])
-
-        # 如果是最后一公里，强制无视 AI 的去站点指令，强制设为直送 (Action 0)
-        if is_last_mile or action == 0:
-            rider.target_pos = order.end.copy()
+        
         else:
+            order = rider.carrying_order
+            is_last_mile = (order.status == ORDER_STATUS["PICKED_BY_R2"])
+            force_station = False
+            if self._rng.random() < self.force_station_prob: 
+                force_station = True
+            # 如果是最后一公里，强制无视 AI 的去站点指令，强制设为直送 (Action 0)
+            if is_last_mile :
+                rider.target_pos = order.end.copy()
+            elif force_station:
+                # 强制寻找最近站点
+                best_sid = -1
+                min_dist = float('inf')
+                for st in self.stations:
+                    d = self._manhattan(rider.pos, st.pos)
+                    if d < min_dist:
+                        min_dist = d
+                        best_sid = st.sid
+                if best_sid != -1:
+                    rider.target_pos = self.stations[best_sid].pos.copy()
+            elif action == 0:
+                rider.target_pos = order.end.copy()
+            else:
             # 只有在第一阶段 (PICKED_BY_R1)，才允许去中转站
-            target_sid = action - 1
-            if 0 <= target_sid < self.n_stations:
-                rider.target_pos = self.stations[target_sid].pos.copy()
+                target_sid = action - 1
+                if 0 <= target_sid < self.n_stations:
+                    rider.target_pos = self.stations[target_sid].pos.copy()
+                return
+                
+
+
 
     # ================================================================
     # Physics: riders
@@ -469,6 +501,8 @@ class DeliveryUAVEnv(ParallelEnv):
                     rider.carrying_order = None
                     rider.target_pos = None
                     rider.free = True
+
+                    self._handoff_this_step += 1 # [新增] 只要交接成功，计数+1
                     return
                 
         if rider.carrying_order is not None and rider.target_pos is None:
@@ -760,7 +794,9 @@ class DeliveryUAVEnv(ParallelEnv):
             r -= 0.02 * float(overflow)
 
         # UAV order balance reward
-        r += 0.002 * float(self._uav_order_balance)
+        r += 0.003 * float(self._uav_order_balance)
+
+        r += 0.01 *self.force_station_prob * self._handoff_this_step
         return float(r)
 
     @staticmethod
