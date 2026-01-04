@@ -31,12 +31,10 @@ class TrainedAgent:
         self.model_path = model_path
         print(f"Loading Policies from {model_path} ...")
         
-        # 拼接策略路径
         rider_ckpt_path = os.path.join(model_path, "policies", "rider_policy")
         station_ckpt_path = os.path.join(model_path, "policies", "station_policy")
 
         try:
-            # [关键修复 2]: 分别加载两个角色的策略权重
             self.rider_policy = Policy.from_checkpoint(rider_ckpt_path)
             self.station_policy = Policy.from_checkpoint(station_ckpt_path)
             print("✅ 策略 (Policies) 加载成功！")
@@ -50,7 +48,6 @@ class TrainedAgent:
         输入: agent_id (str), obs (np.array)
         输出: action (int or list)
         """
-        # [关键修复 3]: 根据名字调用对应的策略对象
         if "rider" in agent_id:
             # result = (action, state_out, info)
             result = self.rider_policy.compute_single_action(obs)
@@ -124,14 +121,11 @@ def run_evaluation(env_class, model=None, episodes=5, label="Default"):
 # ==========================================
 if __name__ == "__main__":
     
-    # 初始化 Ray (去除 local_mode，正常初始化)
     if ray.is_initialized():
         ray.shutdown()
     ray.init(ignore_reinit_error=True, log_to_driver=False)
 
-    # [关键修复 4]: 使用刚才 debug 确认过的真实路径
-    # 使用原始字符串 r"" 防止反斜杠转义
-    CHECKPOINT_PATH = r"D:\Study\Professional_Knowledge\RL\UAV-and-Riders\checkpoints\iter_0280"
+    CHECKPOINT_PATH = r"D:\Study\Professional_Knowledge\RL\UAV-and-Riders\checkpoints\iter_0160"
 
     print("准备开始对比测试...")
 

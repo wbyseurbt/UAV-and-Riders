@@ -114,7 +114,7 @@ def main():
             learner_queue_size=16,
             
             model={
-                "fcnet_hiddens": [64, 64], 
+                "fcnet_hiddens": [256, 256], 
                 "fcnet_activation": "tanh",
             }
         )

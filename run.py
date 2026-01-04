@@ -216,7 +216,7 @@ def run():
     # 必须指向包含 'policies' 文件夹的那一层，例如 'iter_0080'
     # -----------------------------------------------------------
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    CHECKPOINT_PATH = os.path.join(BASE_DIR, "checkpoints", "iter_0280") # <-- 修改这里
+    CHECKPOINT_PATH = os.path.join(BASE_DIR, "checkpoints", "iter_0160") # <-- 修改这里
     
     if not os.path.exists(CHECKPOINT_PATH):
         print(f"错误: 找不到路径 {CHECKPOINT_PATH}")

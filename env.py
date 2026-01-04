@@ -146,7 +146,7 @@ class DeliveryUAVEnv(ParallelEnv):
         # Rider obs (float32, shape=(10,)):
         # [x,y, has_order, order_wait_norm, dist_to_dest_norm, dist_to_nearest_station_norm,
         #  time_norm, dummy1, dummy2, dummy3]
-        self._rider_obs_dim = 10
+        self._rider_obs_dim = 6 + (self.n_stations * 3)
 
         # Station obs (float32, shape=(12,)):
         # [x,y, num_uav_avail_norm, num_waiting_norm, num_to_deliver_norm,
@@ -173,6 +173,9 @@ class DeliveryUAVEnv(ParallelEnv):
 
         # UAV launch cost bookkeeping
         self._uav_launch_this_step = 0
+
+        # reward for uav balance
+        self._uav_order_balance = 0
 
     # RLlib convenience
     def observation_space(self, agent):
@@ -217,7 +220,7 @@ class DeliveryUAVEnv(ParallelEnv):
         self.time += 1
         self._delivered_this_step = 0
         self._uav_launch_this_step = 0
-
+        self._uav_order_balance = 0
         # update waiting time
         for o in self.active_orders:
             o.time_wait += 1
@@ -305,7 +308,6 @@ class DeliveryUAVEnv(ParallelEnv):
         station = self.stations[sid]
 
         if not station.uav_available: return
-        if not station.orders_waiting: return
 
         # 2. 筛选订单：只装填那些“分类结果”为 target_idx 的订单
         # 也就是：Agent 决定发往 Station B，那么只有去 Station B 的货才有资格上飞机
@@ -318,9 +320,23 @@ class DeliveryUAVEnv(ParallelEnv):
             if best_gateway == target_idx:
                 candidates.append(oid)
         
-        # 如果没有匹配的货，说明 Agent 决策失误（发空车），直接返回，不做惩罚（或者你可以给个微小的 step 惩罚）
-        # 但通常这里直接 return 相当于浪费了一个 step，对于 RL 已经是惩罚了
-        if not candidates:
+        # 记住如果是空单也是有价值的
+        # reward for uav balance 目标站点的没有无人机但有订单积压
+        target_st = self.stations[target_idx]
+        # 定义“极度饥饿”：没飞机 且 有积压
+        target_is_starving = (len(target_st.uav_available) == 0) and (len(target_st.orders_waiting) > 0)
+        should_launch = False
+        if candidates:
+            # A. 有实货：当然要飞
+            should_launch = True
+        elif target_is_starving:
+            # B. 没实货，但目标站急需支援：批准空飞 (Rebalancing)
+            should_launch = True
+            # 只有在这种“有效支援”的情况下，才给奖励，防止为了刷分乱飞
+            self._uav_order_balance += 1.0 
+        
+        # 【关键拦截】如果既没货，对方也不缺车，严禁起飞！
+        if not should_launch:
             return
 
         # 3. 选飞机
@@ -363,6 +379,8 @@ class DeliveryUAVEnv(ParallelEnv):
     # ================================================================
     def _process_rider_action(self, rid, action):
         rider = self.riders[rid]
+        if rider.target_pos is not None:
+            return
         if rider.carrying_order is None:
             # simple behavior: move towards nearest station if action > 0
             if action > 0:
@@ -603,30 +621,49 @@ class DeliveryUAVEnv(ParallelEnv):
             rid = int(agent.split("_")[1])
             r = self.riders[rid]
 
+            # --- 1. 自身基础信息 (6 dim) ---
             x = r.pos[0] / max(1, self.grid_size)
             y = r.pos[1] / max(1, self.grid_size)
+            time_norm = min(1.0, self.time / max(1, self.max_steps))
 
             has_order = 1.0 if r.carrying_order is not None else 0.0
+            
             if r.carrying_order is not None:
                 o = r.carrying_order
                 wait_norm = min(1.0, o.time_wait / 60.0)
+                # 距离终点的直线距离
                 dist_to_dest = self._manhattan(r.pos, o.end) / (2 * max(1, self.grid_size))
             else:
                 wait_norm = 0.0
                 dist_to_dest = 0.0
-
-            # nearest station distance
-            d_near = min(self._manhattan(r.pos, st.pos) for st in self.stations) / (2 * max(1, self.grid_size))
             
-            nearest_st = min(self.stations, key=lambda s: self._manhattan(r.pos, s.pos))
-            # 最近站点的拥堵程度
-            # 如果那个站点排队很长，这个值会很大 (接近1.0)
-            # 骑手 AI 看到这个值很高，就会学到：“太堵了，我还是自己送吧”
-            st_congestion = min(1.0, len(nearest_st.orders_waiting) / max(1, cfg.Station_MAX_ORDER_BUFFER))
+            base_obs = [x, y, has_order, wait_norm, dist_to_dest, time_norm]
 
-            time_norm = min(1.0, self.time / max(1, self.max_steps))
+            # --- 2. 所有站点的信息 (3 * N dim) ---
+            # 关键：按照 Station ID 的顺序依次放入，这样网络才能对应上 Action ID
+            station_features = []
+            
+            # 归一化常数
+            MAX_DIST = 2 * max(1, self.grid_size)
+            MAX_BUFFER = max(1, cfg.Station_MAX_ORDER_BUFFER)
+            MAX_UAVS = max(1, cfg.Station_MAX_UAVS)
 
-            obs = np.array([x, y, has_order, wait_norm, dist_to_dest, d_near, time_norm, st_congestion, 0.0, 0.0], dtype=np.float32)
+            for st in self.stations:
+                # Feature A: 离该站点的距离
+                d = self._manhattan(r.pos, st.pos) / MAX_DIST
+                
+                # Feature B: 该站点的拥堵程度 (订单积压量)
+                # 积压越多，Rider 越不该去
+                cong = len(st.orders_waiting) / MAX_BUFFER
+                
+                # Feature C: 该站点的运力储备 (无人机数量)
+                # 无人机越多，Rider 越应该去
+                uavs = len(st.uav_available) / MAX_UAVS
+                
+                station_features.extend([d, min(1.0, cong), min(1.0, uavs)])
+
+            # --- 3. 拼接 ---
+            obs = np.array(base_obs + station_features, dtype=np.float32)
             return obs
 
         if agent.startswith("station_"):
@@ -722,6 +759,8 @@ class DeliveryUAVEnv(ParallelEnv):
         if overflow > 0:
             r -= 0.02 * float(overflow)
 
+        # UAV order balance reward
+        r += 0.002 * float(self._uav_order_balance)
         return float(r)
 
     @staticmethod
