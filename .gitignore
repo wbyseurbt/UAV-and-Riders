@@ -1,2 +1,13 @@
+*
+!.gitignore
+!LICENSE
+!README.md
+!run.py
+!train.py
+!scripts/
+!scripts/**
+!uavriders/
+!uavriders/**
+
 __pycache__/
-Old_version/
+*.py[cod]
