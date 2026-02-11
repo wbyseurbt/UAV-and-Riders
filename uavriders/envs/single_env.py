@@ -38,7 +38,7 @@ class DeliveryUAVSingleAgentEnv(gym.Env):
         n_riders = int(self.cfg.n_riders)
 
         self._rider_obs_dim = 6 + (n_stations * 3)
-        self._station_obs_dim = 6 + (n_stations * 2)
+        self._station_obs_dim = 6 + (n_stations * 2)##特征维度
 
         self._subaction_n = int(1 + n_stations)
         self._action_len = int(n_riders + n_stations)

@@ -12,23 +12,21 @@ def generate_orders(env) -> None:
         if not free_riders:
             return
 
-        rider = env._rng.choice(free_riders)
-
         start_pos = env._rng.choice(env.shop_locs).copy()
         end_pos = np.array([env._rng.randint(0, env.grid_size), env._rng.randint(0, env.grid_size)], dtype=int)
 
+        rider = min(free_riders, key=lambda r: manhattan(r.pos, start_pos))
+
         oid = len(env.orders)
         o = Order(oid, start_pos, end_pos, env.time)
-        o.status = ORDER_STATUS["PICKED_BY_R1"]
         o.rider1_id = rider.rid
 
         env.orders.append(o)
         env.active_orders.append(o)
 
-        rider.pos = start_pos.copy()
         rider.free = False
         rider.carrying_order = o
-        rider.target_pos = None
+        rider.target_pos = start_pos.copy()
 
 
 def add_manual_order(env, start_pos, end_pos) -> None:
@@ -42,16 +40,13 @@ def add_manual_order(env, start_pos, end_pos) -> None:
 
     oid = len(env.orders)
     o = Order(oid, start_pos, end_pos, env.time)
-    o.status = ORDER_STATUS["PICKED_BY_R1"]
     o.rider1_id = rider.rid
 
     env.orders.append(o)
     env.active_orders.append(o)
 
-    rider.pos = np.array(start_pos, dtype=int)
     rider.free = False
     rider.carrying_order = o
-    rider.target_pos = None
+    rider.target_pos = np.array(start_pos, dtype=int)
 
     print(f"手动订单已生成: Order {oid} | {start_pos} -> {end_pos} | Rider {rider.rid}")
-

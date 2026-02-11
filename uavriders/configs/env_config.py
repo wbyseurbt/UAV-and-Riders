@@ -50,10 +50,6 @@ class EnvConfig:
     def n_uavs(self) -> int:
         return int(self.n_stations * self.n_uav_each_station)
 
-
-    '''
-    将配置转换为字典格式
-    '''
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data["n_stations"] = self.n_stations
