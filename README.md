@@ -19,12 +19,6 @@ pip install -U matplotlib
 python train.py --iters 100 --max_steps 200 --seed 0
 ```
 
-也可以直接运行脚本：
-
-```bash
-python scripts/sb3/train_ppo.py --iters 100 --max_steps 200 --seed 0
-```
-
 ### 训练步数怎么控制？
 本项目用 `--iters` 控制训练迭代次数，每次迭代的采样步数为：
 
@@ -34,14 +28,15 @@ python scripts/sb3/train_ppo.py --iters 100 --max_steps 200 --seed 0
 ```
 
 其中：
-- `n_steps`：PPO 每个环境每次 rollout 的步数（默认 2048）
+- `n_steps`：PPO 每个环境每次 rollout 的步数（默认 2048），rollout就是让当前策略在环境中实际运行一段时间，收集一段连续的交互数据
 - `n_envs`：并行环境数量（默认自动取 CPU 核心数；见下文“环境并行”）
 
-如果你想大致对齐“总 timesteps”，可以自己换算出 iters。例如 `n_steps=2048, n_envs=16` 时，每迭代采样 `32768` 步。
+注意：
+- `max_steps`： 是每个环境运行的最大步数，不是总步数。
+
 
 ### 环境并行（默认开启）
 默认使用多进程并行环境（`SubprocVecEnv`）：
-- `--vec_env` 默认是 `subproc`
 - `--n_envs` 默认是 `0`，表示自动取 `CPU 核心数`
 
 常用示例（显式指定 16 个并行环境）：
@@ -49,16 +44,6 @@ python scripts/sb3/train_ppo.py --iters 100 --max_steps 200 --seed 0
 ```bash
 python train.py --n_envs 16
 ```
-
-多进程启动方式（Linux 推荐 `forkserver`，默认也是它）：
-
-```bash
-python train.py --vec_env subproc --start_method forkserver
-```
-
-### policy 选哪个？
-当前环境观测是 1D 向量（Box），推荐：
-- `--policy MlpPolicy`（默认）
 
 ### 用 GPU 训练（4090）
 强制把网络放到 GPU 上训练：
@@ -93,7 +78,7 @@ python train.py --device cuda --n_envs 16 --n_steps 4096 --net_arch 512,512 --ba
 ## TensorBoard（查看奖励分量）
 
 ```bash
-tensorboard --logdir ./logs
+tensorboard --logdir ./logs/ppo/<训练时间>/
 ```
 
 在 Scalars 里查看：
@@ -106,8 +91,37 @@ tensorboard --logdir ./logs
 python run.py --model ./logs/ppo/<训练时间>/final_model.zip --max-steps 200 --seed 0
 ```
 
-或：
+也可以直接运行脚本：
 
 ```bash
-python scripts/sb3/render_rollout.py --model ./logs/ppo/<训练时间>/final_model.zip --max-steps 200 --seed 0
+python scripts/sb3/render_rollout.py --model ./logs/ppo/<训练时间>/final_model.zip --max_steps 200 --seed 0
+```
+
+如果你在无图形界面的服务器/容器里（租用 GPU 常见），请用 `--save` 导出文件：
+
+```bash
+python scripts/sb3/render_rollout.py --model ./logs/ppo/<训练时间>/final_model.zip --save ./rollout.mp4
+```
+
+也可以只写 `--save`，脚本会自动保存到项目根目录下的 `./video/`，并自动命名：
+- 文件名格式：`<训练时间>_iter<iter>_<序号>.mp4`
+- 训练时间来自模型路径里的 `logs/ppo/<训练时间>/...`
+- `<iter>` 对应 `final_model.zip` 的 `final`，或 checkpoint 的 `iter_XXXX.zip` 的 `XXXX`
+- 同一个模型多次导出会自动把 `<序号>` 递增
+
+示例：
+
+```bash
+python scripts/sb3/render_rollout.py --model ./logs/ppo/20260210-232140/final_model.zip --save
+```
+
+### 控制视频时长
+导出文件时，可以用 `--duration`（单位秒）直接控制时长；也可以用 `--frames` 控制总帧数：
+- `duration ≈ frames / fps`
+- `fps` 默认从 `interval` 推导（约等于 `1000/interval`），也可以手动 `--fps`
+
+示例（导出 30 秒，30fps）：
+
+```bash
+python scripts/sb3/render_rollout.py --model ./logs/ppo/<训练时间>/final_model.zip --save --duration 30 --fps 30
 ```
