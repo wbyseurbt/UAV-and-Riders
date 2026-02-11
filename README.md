@@ -125,4 +125,33 @@ python scripts/sb3/render_rollout.py --model ./logs/ppo/20260210-232140/final_mo
 ```bash
 python scripts/sb3/render_rollout.py --model ./logs/ppo/<训练时间>/final_model.zip --save --duration 30 --fps 30
 ```
+
+如果你在无图形界面的服务器/容器里（租用 GPU 常见），请用 `--save` 导出文件：
+
+```bash
+python scripts/sb3/render_rollout.py --model ./logs/ppo/<训练时间>/final_model.zip --save ./rollout.mp4
+```
+
+也可以只写 `--save`，脚本会自动保存到项目根目录下的 `./video/`，并自动命名：
+- 文件名格式：`<训练时间>_iter<iter>_<序号>.mp4`
+- 训练时间来自模型路径里的 `logs/ppo/<训练时间>/...`
+- `<iter>` 对应 `final_model.zip` 的 `final`，或 checkpoint 的 `iter_XXXX.zip` 的 `XXXX`
+- 同一个模型多次导出会自动把 `<序号>` 递增
+
+示例：
+
+```bash
+python scripts/sb3/render_rollout.py --model ./logs/ppo/20260210-232140/final_model.zip --save
+```
+
+### 控制视频时长
+导出文件时，可以用 `--duration`（单位秒）直接控制时长；也可以用 `--frames` 控制总帧数：
+- `duration ≈ frames / fps`
+- `fps` 默认从 `interval` 推导（约等于 `1000/interval`），也可以手动 `--fps`
+
+示例（导出 30 秒，30fps）：
+
+```bash
+python scripts/sb3/render_rollout.py --model ./logs/ppo/<训练时间>/final_model.zip --save --duration 30 --fps 30
+```
  
