@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import numpy as np
+
 from uavriders.sim.entities import ORDER_STATUS
 from uavriders.sim.utils import manhattan
 
@@ -31,6 +33,23 @@ def process_station_action(env, sid: int, action) -> None:
         return
 
     station = env.stations[sid]
+    
+    # --- Timeout Fallback Logic ---
+    # Check for orders that have waited too long (e.g., > 60 steps) in orders_waiting
+    # Move them to orders_to_deliver so they can be picked up by riders (fallback)
+    # This prevents infinite waiting if no UAV is launched
+    TIMEOUT_THRESHOLD = 60
+    timed_out_orders = []
+    for oid in station.orders_waiting:
+        if env.orders[oid].time_wait > TIMEOUT_THRESHOLD:
+            timed_out_orders.append(oid)
+    
+    if timed_out_orders:
+        for oid in timed_out_orders:
+            station.orders_waiting.remove(oid)
+            station.orders_to_deliver.append(oid)
+            # Log or penalize if needed, but for now just fallback
+    # -------------------------------
 
     if not station.uav_available:
         return
@@ -64,7 +83,22 @@ def process_station_action(env, sid: int, action) -> None:
 
     uav_id = uav_battery_max_id
     uav = env.uavs[uav_id]
-    if uav.battery < 0.1:
+    
+    # Calculate expected battery consumption
+    # Distance = Euclidean distance between current station and target station
+    current_pos = station.pos.astype(float)
+    target_pos = target_st.pos.astype(float)
+    dist = np.linalg.norm(target_pos - current_pos)
+    
+    # Cost = (distance / speed) * (0.001 * speed) = distance * 0.001
+    # Or more precisely: steps = ceil(dist / speed), cost = steps * (0.001 * speed)
+    # Using continuous approximation consistent with move_uavs:
+    # move_uavs reduces 0.001 * speed per step. Total steps approx dist/speed.
+    # Total cost approx (dist/speed) * (0.001 * speed) = dist * 0.001
+    expected_cost = dist * 0.001
+    
+    # Ensure battery after flight >= 0.1
+    if uav.battery - expected_cost < 0.1:
         return
 
     candidates.sort(key=lambda oid: env.orders[oid].time_wait, reverse=True)

@@ -41,13 +41,19 @@ def process_rider_action(env, rid: int, action: int) -> None:
             if d < min_dist:
                 min_dist = d
                 best_sid = st.sid
-        if best_sid != -1:
-            rider.target_pos = env.stations[best_sid].pos.copy()
 
-        target_sid = action - 1
-        if best_sid != -1 and target_sid == best_sid:
-            env._handoff_optimal_this_step += 1
-        return
+        # Only force station if delivery distance is significantly larger than distance to station
+        # e.g., delivery distance > 1.5 * distance to station
+        dist_to_end = manhattan(rider.pos, order.end)
+        if best_sid != -1 and dist_to_end > 2 * min_dist:
+            rider.target_pos = env.stations[best_sid].pos.copy()
+            
+            # Check if optimal action was chosen (for reward stats)
+            target_sid = action - 1
+            if target_sid == best_sid:
+                env._handoff_optimal_this_step += 1
+            return
+        # If condition not met, fall through to normal strategy logic
 
     if action == 0:
         rider.target_pos = order.end.copy()

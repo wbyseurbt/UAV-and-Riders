@@ -38,13 +38,33 @@ class MplRenderer:
             shop_y = [p[1] for p in env.shop_locs]
             self.ax.scatter(shop_x, shop_y, c="#2ca02c", marker="s", s=120, zorder=9, edgecolors="black")
 
-        rx = [r.pos[0] for r in env.riders]
-        ry = [r.pos[1] for r in env.riders]
-        self.ax.scatter(rx, ry, c="#1f77b4", marker="o", s=70, zorder=12, edgecolors="black")
+        # Render Riders: distinct style for carrying_order vs free
+        # Free riders: hollow circle
+        rx_free = [r.pos[0] for r in env.riders if r.carrying_order is None]
+        ry_free = [r.pos[1] for r in env.riders if r.carrying_order is None]
+        self.ax.scatter(rx_free, ry_free, facecolors="none", edgecolors="#1f77b4", marker="o", s=70, zorder=12, linewidth=1.5, label="Free Rider")
+
+        # Busy riders: filled circle
+        rx_busy = [r.pos[0] for r in env.riders if r.carrying_order is not None]
+        ry_busy = [r.pos[1] for r in env.riders if r.carrying_order is not None]
+        self.ax.scatter(rx_busy, ry_busy, c="#1f77b4", marker="o", s=70, zorder=12, edgecolors="black", label="Busy Rider")
+
+        # Draw paths for riders with target_pos
+        for r in env.riders:
+            if r.target_pos is not None:
+                self.ax.plot([r.pos[0], r.target_pos[0]], [r.pos[1], r.target_pos[1]], 
+                             c="#1f77b4", linestyle="--", linewidth=1, alpha=0.5, zorder=11)
 
         ux = [u.pos[0] for u in env.uavs]
         uy = [u.pos[1] for u in env.uavs]
         self.ax.scatter(ux, uy, c="#ff7f0e", marker="D", s=60, zorder=11, edgecolors="black")
+
+        # Draw paths for flying UAVs
+        for u in env.uavs:
+            if u.station_id is None and u.target_station is not None:
+                target_pos = env.stations[u.target_station].pos
+                self.ax.plot([u.pos[0], target_pos[0]], [u.pos[1], target_pos[1]], 
+                             c="#ff7f0e", linestyle=":", linewidth=1.5, alpha=0.6, zorder=10)
 
         self.ax.set_title(f"t={getattr(env, 'time', 0)}")
         return self.fig, self.ax

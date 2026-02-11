@@ -29,14 +29,14 @@ class EnvConfig:
         (17, 5),
     )
 
-    n_riders: int = 10
+    n_riders: int = 20
     n_uav_each_station: int = 5
 
     station_max_uavs: int = 10
     station_max_order_buffer: int = 50
     station_max_concurrent_launch: int = 3
 
-    force_station_prob: float = 0.0
+    force_station_prob: float = 0.2
 
     @property
     def n_stations(self) -> int:
