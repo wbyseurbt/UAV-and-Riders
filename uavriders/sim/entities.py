@@ -40,6 +40,7 @@ class Rider:
         self.free = True
         self.carrying_order = None
         self.target_pos = None
+        self.pending_order = None
 
         self.move_buffer = 0.0
         self.speed = float(cfg.rider_speed)
@@ -49,6 +50,7 @@ class Rider:
         self.free = True
         self.carrying_order = None
         self.target_pos = None
+        self.pending_order = None
         self.move_buffer = 0.0
 
 
@@ -83,4 +85,3 @@ class Station:
         self.uav_available = []
         self.orders_waiting = []
         self.orders_to_deliver = []
-

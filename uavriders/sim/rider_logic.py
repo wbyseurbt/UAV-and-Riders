@@ -11,6 +11,10 @@ def process_rider_action(env, rid: int, action: int) -> None:
     if rider.target_pos is not None:
         return
 
+    # If the rider is heading to pick up a pending order (last mile), ignore strategy actions
+    if rider.pending_order is not None:
+        return
+
     if rider.carrying_order is None:
         if action > 0:
             sid = action - 1
@@ -19,6 +23,9 @@ def process_rider_action(env, rid: int, action: int) -> None:
         return
 
     order = rider.carrying_order
+    if order.status == ORDER_STATUS["UNASSIGNED"]:
+        rider.target_pos = order.start.copy()
+        return
     is_last_mile = order.status == ORDER_STATUS["PICKED_BY_R2"]
     force_station = env._rng.random() < env.force_station_prob
 
@@ -93,11 +100,29 @@ def move_riders(env) -> None:
 
 def handle_rider_arrival(env, rider) -> None:
     if rider.carrying_order is None:
+        if rider.pending_order is not None:
+            for st in env.stations:
+                if np.array_equal(rider.pos, st.pos):
+                    oid = int(rider.pending_order)
+                    o = env.orders[oid]
+                    o.status = ORDER_STATUS["PICKED_BY_R2"]
+                    o.rider2_id = rider.rid
+                    rider.carrying_order = o
+                    rider.pending_order = None
+                    rider.target_pos = o.end.copy()
+                    rider.free = False
+                    return
         rider.target_pos = None
         rider.free = True
         return
 
     o = rider.carrying_order
+
+    if o.status == ORDER_STATUS["UNASSIGNED"] and np.array_equal(rider.pos, o.start):
+        o.status = ORDER_STATUS["PICKED_BY_R1"]
+        rider.target_pos = None
+        rider.free = False
+        return
 
     if np.array_equal(rider.pos, o.end):
         o.status = ORDER_STATUS["DELIVERED"]
@@ -134,20 +159,16 @@ def handle_rider_last_mile(env, station) -> None:
     if not station.orders_to_deliver:
         return
 
-    free_riders = [r for r in env.riders if r.carrying_order is None]
+    # Filter riders who are truly free (no carrying order AND no pending order)
+    free_riders = [r for r in env.riders if r.carrying_order is None and r.pending_order is None]
     if not free_riders:
         return
 
-    rider = env._rng.choice(free_riders)
-    oid = env._rng.choice(station.orders_to_deliver)
+    rider = min(free_riders, key=lambda r: manhattan(r.pos, station.pos))
+    oid = max(station.orders_to_deliver, key=lambda x: env.orders[x].time_wait)
     station.orders_to_deliver.remove(oid)
 
     o = env.orders[oid]
-    o.status = ORDER_STATUS["PICKED_BY_R2"]
-    o.rider2_id = rider.rid
-
-    rider.pos = station.pos.copy()
+    rider.pending_order = oid
     rider.free = False
-    rider.carrying_order = o
-    rider.target_pos = o.end.copy()
-
+    rider.target_pos = station.pos.copy()
