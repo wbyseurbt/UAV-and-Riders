@@ -72,6 +72,15 @@ def main():
         print(f"Error: 找不到模型文件: {args.model}")
         sys.exit(1)
 
+    # 尝试配置 ffmpeg
+    if not animation.writers.is_available("ffmpeg"):
+        try:
+            import imageio_ffmpeg
+            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+            matplotlib.rcParams["animation.ffmpeg_path"] = ffmpeg_exe
+        except ImportError:
+            pass
+
     save_path = str(args.save).strip()
     project_root = Path(__file__).resolve().parents[2]
     has_display = bool(os.environ.get("DISPLAY"))

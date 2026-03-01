@@ -49,7 +49,7 @@ python train.py --n_envs 16
 强制把网络放到 GPU 上训练：
 
 ```bash
-python train.py --device cuda
+python train.py --device cuda-
 ```
 
 说明：

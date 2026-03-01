@@ -2,14 +2,15 @@ from __future__ import annotations
 
 
 def compute_reward_components(env) -> dict[str, float]:
-    active_order_step_penalty = 0.01
-    delivered_reward = 0.5
+    active_order_step_penalty = 0.0001
+    delivered_reward = 8.8
     total_wait_penalty_coef = 0.0001
     overtime_threshold = 60
-    overtime_penalty = 1.0
+    overtime_penalty = 0.2
     uav_launch_cost = 0.0001
-    hub_overflow_penalty_coef = 0.02
-    uav_order_balance_reward_coef = 0.003
+    uav_launch_bonus = 0.5  # 额外奖励：每发射一次无人机给 0.5 分e:\reinforcementlearning\UAV-and-Riders-main\UAV-and-Riders
+    hub_overflow_penalty_coef = 2.0
+    uav_order_balance_reward_coef = 0.3
     handoff_reward_coef = 0.05
     handoff_optimal_reward_coef = 0.01
 
@@ -23,6 +24,8 @@ def compute_reward_components(env) -> dict[str, float]:
     overtime_term = -overtime_penalty * overtime
 
     uav_launch_term = -uav_launch_cost * float(env._uav_launch_this_step)
+    # 额外加上起飞奖励
+    uav_launch_term += uav_launch_bonus * float(env._uav_launch_this_step)
 
     overflow = 0
     for st in env.stations:

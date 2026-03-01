@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+
+# Set font to support Chinese characters
+plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS']
+plt.rcParams['axes.unicode_minus'] = False 
 
 
 class MplRenderer:
-    def __init__(self, figsize=(9, 9)):
+    def __init__(self, figsize=(12, 9)):
         self.fig, self.ax = plt.subplots(figsize=figsize)
+        # Adjust layout to make room for legend on the right
+        self.fig.subplots_adjust(right=0.75)
 
     def init_map(self, grid_size: int):
         self.ax.clear()
@@ -67,5 +74,27 @@ class MplRenderer:
                              c="#ff7f0e", linestyle=":", linewidth=1.5, alpha=0.6, zorder=10)
 
         self.ax.set_title(f"t={getattr(env, 'time', 0)}")
+
+        # Add Legend
+        legend_elements = [
+            Line2D([0], [0], marker='^', color='w', label='Station (站点)',
+                   markerfacecolor='red', markeredgecolor='black', markersize=10),
+        ]
+
+        if hasattr(env, "shop_locs") and len(env.shop_locs) > 0:
+            legend_elements.append(Line2D([0], [0], marker='s', color='w', label='Shop (商家)',
+                                          markerfacecolor='#2ca02c', markeredgecolor='black', markersize=8))
+
+        legend_elements.extend([
+            Line2D([0], [0], marker='o', color='w', label='Rider (Free)\n(空闲骑手)',
+                   markerfacecolor='none', markeredgecolor='#1f77b4', markersize=8, markeredgewidth=1.5),
+            Line2D([0], [0], marker='o', color='w', label='Rider (Busy)\n(忙碌骑手)',
+                   markerfacecolor='#1f77b4', markeredgecolor='black', markersize=8),
+            Line2D([0], [0], marker='D', color='w', label='UAV (无人机)',
+                   markerfacecolor='#ff7f0e', markeredgecolor='black', markersize=8),
+        ])
+
+        self.ax.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(1.02, 1), borderaxespad=0., title="Legend (图例)")
+
         return self.fig, self.ax
 

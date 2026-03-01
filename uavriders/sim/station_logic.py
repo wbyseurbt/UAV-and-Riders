@@ -55,10 +55,15 @@ def process_station_action(env, sid: int, action) -> None:
         return
 
     candidates = []
+    target_st_pos = env.stations[target_idx].pos
     for oid in station.orders_waiting:
         o = env.orders[oid]
-        best_gateway = classify_order_target(env, o, sid)
-        if best_gateway == target_idx:
+        
+        # 只要能缩短距离（让货物离终点更近），就允许发射
+        current_dist = manhattan(station.pos, o.end)
+        target_dist = manhattan(target_st_pos, o.end)
+        
+        if target_dist < current_dist:
             candidates.append(oid)
 
     target_st = env.stations[target_idx]

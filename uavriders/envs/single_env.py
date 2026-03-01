@@ -205,7 +205,7 @@ class DeliveryUAVSingleAgentEnv(gym.Env):
         reward = float(sum(reward_components.values()))
         terminated = self.time >= self.max_steps
         truncated = False
-        if len(self.active_orders) > 50:
+        if len(self.active_orders) > 20:
             truncated = True
             reward = -200.0
             reward_components = {"overflow_truncate_penalty": -200.0}
