@@ -155,3 +155,9 @@ python scripts/sb3/render_rollout.py --model ./logs/ppo/20260210-232140/final_mo
 python scripts/sb3/render_rollout.py --model ./logs/ppo/<训练时间>/final_model.zip --save --duration 30 --fps 30
 ```
  
+run_baseline.py 是trae写的纯骑手基准模型。
+创建虚拟环境
+conda create -n uav python=3.10 -y
+conda activate uav
+requirements.txt是所有需要配置的环境 
+pip install -r requirements.txt
