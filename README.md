@@ -49,7 +49,7 @@ python train.py --n_envs 16
 强制把网络放到 GPU 上训练：
 
 ```bash
-python train.py --device cuda-
+python train.py --device cuda
 ```
 
 说明：
@@ -88,7 +88,7 @@ tensorboard --logdir ./logs/ppo/<训练时间>/
 从 `./logs/ppo/<训练时间>/final_model.zip` 加载：
 
 ```bash
-python run.py --model ./logs/ppo/<训练时间>/final_model.zip --max-steps 200 --seed 0
+python run.py --model ./logs/ppo/<训练时间>/final_model.zip --max_steps 200 --seed 0
 ```
 
 也可以直接运行脚本：

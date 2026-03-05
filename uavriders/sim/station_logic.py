@@ -35,10 +35,11 @@ def process_station_action(env, sid: int, action) -> None:
     station = env.stations[sid]
     
     # --- Timeout Fallback Logic ---
-    # Check for orders that have waited too long (e.g., > 60 steps) in orders_waiting
+    # Check for orders that have waited too long in orders_waiting
     # Move them to orders_to_deliver so they can be picked up by riders (fallback)
     # This prevents infinite waiting if no UAV is launched
-    TIMEOUT_THRESHOLD = 60
+    # OPTIMIZATION: Reduced threshold from 60 to 20 to react faster to "stuck" orders
+    TIMEOUT_THRESHOLD = 20
     timed_out_orders = []
     for oid in station.orders_waiting:
         if env.orders[oid].time_wait > TIMEOUT_THRESHOLD:

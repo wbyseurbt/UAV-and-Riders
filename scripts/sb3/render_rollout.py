@@ -112,6 +112,27 @@ def main():
         obs, _, terminated, truncated, _ = env.step(action)
         renderer.render(env)
         if terminated or truncated:
+            # Print stats report before resetting
+            print("\n" + "="*40)
+            print("  EPISODE DELIVERY REPORT")
+            print("="*40)
+            print(f"Total Delivered: {env.data.stats_total_delivered}")
+            if env.data.stats_total_delivered > 0:
+                uav_count = env.data.stats_delivered_by_uav
+                rider_count = env.data.stats_delivered_by_rider_only
+                
+                # Calculate average times
+                avg_time_all = env.data.stats_total_delivery_time / env.data.stats_total_delivered
+                avg_time_uav = env.data.stats_uav_delivery_time_sum / uav_count if uav_count > 0 else 0.0
+                avg_time_rider = env.data.stats_rider_delivery_time_sum / rider_count if rider_count > 0 else 0.0
+                
+                print(f"By UAV:   {uav_count} ({uav_count/env.data.stats_total_delivered*100:.1f}%) | Avg Time: {avg_time_uav:.2f} steps")
+                print(f"By Rider: {rider_count} ({rider_count/env.data.stats_total_delivered*100:.1f}%) | Avg Time: {avg_time_rider:.2f} steps")
+                print(f"Overall Avg Time: {avg_time_all:.2f} steps")
+            else:
+                print("No orders delivered.")
+            print("="*40 + "\n")
+            
             obs, _ = env.reset(seed=args.seed)
         return renderer.ax
 

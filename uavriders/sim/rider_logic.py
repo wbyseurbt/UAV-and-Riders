@@ -60,7 +60,23 @@ def process_rider_action(env, rid: int, action: int) -> None:
         return
 
     target_sid = action - 1
+    
+    # ------------------------------------------------------------------
+    # Optimization: Prevent delivering to a station that is closest to the destination.
+    # If the target station is the closest station to the order's destination,
+    # it means it's the "last mile" station. If the rider goes there, the only option
+    # is for another rider (or himself) to deliver it to the end.
+    # So he should just deliver it directly to the end instead of stopping at that station.
+    # ------------------------------------------------------------------
     if 0 <= target_sid < env.n_stations:
+        # Find which station is closest to the order destination
+        closest_station_to_dest = min(env.stations, key=lambda s: manhattan(s.pos, order.end))
+        
+        # If the rider wants to go to that station, forbid it (force direct delivery)
+        if target_sid == closest_station_to_dest.sid:
+             rider.target_pos = order.end.copy()
+             return
+        
         rider.target_pos = env.stations[target_sid].pos.copy()
 
     best_sid = -1
@@ -133,6 +149,20 @@ def handle_rider_arrival(env, rider) -> None:
     if np.array_equal(rider.pos, o.end):
         o.status = ORDER_STATUS["DELIVERED"]
         env._delivered_this_step += 1
+        
+        # Update delivery stats
+        env.data.stats_total_delivered += 1
+        delivery_time = env.time - o.time_created
+        env.data.stats_total_delivery_time += delivery_time
+        
+        # Check delivery type (UAV assisted or Rider only)
+        if o.uav_id is not None:
+            env.data.stats_delivered_by_uav += 1
+            env.data.stats_uav_delivery_time_sum += delivery_time
+        else:
+            env.data.stats_delivered_by_rider_only += 1
+            env.data.stats_rider_delivery_time_sum += delivery_time
+
         if o in env.active_orders:
             env.active_orders.remove(o)
 

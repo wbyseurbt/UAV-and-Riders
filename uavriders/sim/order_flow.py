@@ -7,7 +7,7 @@ from uavriders.sim.utils import manhattan
 
 
 def generate_orders(env) -> None:
-    if env._rng.random() < 0.2:
+    if env._rng.random() < 0.1:
         free_riders = [r for r in env.riders if r.carrying_order is None]
         if not free_riders:
             return

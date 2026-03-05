@@ -9,8 +9,8 @@ def compute_reward_components(env) -> dict[str, float]:
     overtime_penalty = 0.2
     uav_launch_cost = 0.0001
     uav_launch_bonus = 0.5  # 额外奖励：每发射一次无人机给 0.5 分e:\reinforcementlearning\UAV-and-Riders-main\UAV-and-Riders
-    hub_overflow_penalty_coef = 2.0
-    uav_order_balance_reward_coef = 0.3
+    hub_overflow_penalty_coef = 20
+    uav_order_balance_reward_coef = 0.5
     handoff_reward_coef = 0.05
     handoff_optimal_reward_coef = 0.01
 

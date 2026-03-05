@@ -58,12 +58,24 @@ class MplRenderer:
 
         # Draw paths for riders with target_pos
         for r in env.riders:
+            # Draw movement path (Blue dashed line)
             if r.target_pos is not None:
                 self.ax.plot([r.pos[0], r.target_pos[0]], [r.pos[1], r.target_pos[1]], 
                              c="#1f77b4", linestyle="--", linewidth=1, alpha=0.5, zorder=11)
+            
+            # Draw order destination path (Green dotted line) if carrying order
+            if r.carrying_order is not None:
+                # If target_pos is not the final destination (e.g. going to station), show the final destination
+                final_dest = r.carrying_order.end
+                if r.target_pos is None or not (r.target_pos[0] == final_dest[0] and r.target_pos[1] == final_dest[1]):
+                    # Connect current rider pos to final order destination
+                    self.ax.plot([r.pos[0], final_dest[0]], [r.pos[1], final_dest[1]], 
+                                 c="green", linestyle=":", linewidth=1.2, alpha=0.4, zorder=10)
+                    # Mark the destination with a small cross
+                    self.ax.scatter(final_dest[0], final_dest[1], marker="x", c="green", s=40, zorder=10, alpha=0.6)
 
-        ux = [u.pos[0] for u in env.uavs]
-        uy = [u.pos[1] for u in env.uavs]
+        ux = [u.pos[0] for u in env.uavs]   
+        uy = [u.pos[1] for u in env.uavs]   
         self.ax.scatter(ux, uy, c="#ff7f0e", marker="D", s=60, zorder=11, edgecolors="black")
 
         # Draw paths for flying UAVs

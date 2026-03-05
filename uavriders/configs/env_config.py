@@ -7,7 +7,7 @@ from typing import Any, Mapping
 @dataclass(frozen=True, slots=True)
 class EnvConfig:
     rider_speed: float = 0.5
-    uav_speed: float = 1.5
+    uav_speed: float = 2.5
     uav_capacity_limit: int = 5
 
     world_grid_size: int = 20
@@ -29,14 +29,14 @@ class EnvConfig:
         (17, 5),
     )
 
-    n_riders: int = 20
+    n_riders: int = 30
     n_uav_each_station: int = 5
 
     station_max_uavs: int = 10
-    station_max_order_buffer: int = 50
+    station_max_order_buffer: int = 100
     station_max_concurrent_launch: int = 3
 
-    force_station_prob: float = 0.2
+    force_station_prob: float = 0.5
 
     @property
     def n_stations(self) -> int:
