@@ -161,3 +161,17 @@ conda create -n uav python=3.10 -y
 conda activate uav
 requirements.txt是所有需要配置的环境 
 pip install -r requirements.txt
+
+输出示例
+[Iteration 1] Starting Rollout Collection...           <-- 新增：提示开始采集
+[Timing] Total Data Collection Time: 12.5s             <-- 新增：采集耗时
+[Timing] -> Simulation Time: 8.0s                      <-- 新增：仿真耗时
+---------------------------------
+| rollout/           |          |
+|    ep_len_mean     | 200      |                      <-- 原有：SB3 训练指标（完全保留）
+|    ep_rew_mean     | -50.2    |
+| time/              |          |
+|    fps             | 120      |
+---------------------------------
+[Iteration 1] Starting Training...                     <-- 新增：提示开始训练
+[Timing] Network Training Time: 2.1s                   <-- 新增：训练耗时
