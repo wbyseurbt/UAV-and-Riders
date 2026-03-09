@@ -71,7 +71,7 @@ def process_station_action(env, sid: int, action) -> None:
     
     # --- Enhanced Balance Strategy ---
     # Target is starving if it has very few UAVs OR its backlog is growing relative to its UAV count
-    target_needs_help = (len(target_st.uav_available) < 3) or \
+    target_needs_help = (len(target_st.uav_available) < 1) or \
                         (len(target_st.orders_waiting) > max(1, len(target_st.uav_available)) * 2)
     
     # Source can give if it has plenty of UAVs OR it has no work to do
@@ -83,7 +83,6 @@ def process_station_action(env, sid: int, action) -> None:
     elif target_needs_help and source_can_give:
         should_launch = True
         env._uav_order_balance += 1.0
-
     if not should_launch:
         return
 

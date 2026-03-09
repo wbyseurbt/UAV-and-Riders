@@ -14,7 +14,7 @@ from stable_baselines3.common.callbacks import BaseCallback, CallbackList, Check
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 
-
+from scripts.sb3.timing_utils import TimedPPO, TimingWrapper
 from uavriders.envs.single_env import DeliveryUAVSingleAgentEnv
 
 from scripts.sb3.savemodel import SaveByIterationCallback
@@ -25,6 +25,7 @@ def make_vec_env(n_envs: int, max_steps: int, seed: int, vec_env_type: str, star
     def make_one(rank: int):
         def _init():
             env = DeliveryUAVSingleAgentEnv(max_steps=max_steps, seed=seed + rank)
+            env = TimingWrapper(env)
             return Monitor(env)
 
         return _init
@@ -136,7 +137,7 @@ def main():
     if batch_size <= 0:
         batch_size = max(1, n_steps * num_envs)
 
-    model = PPO(
+    model = TimedPPO(
         policy=policy,
         env=vec_env,
         verbose=1,

@@ -10,6 +10,7 @@ class EnvConfig:
     uav_speed: float = 2.5
     uav_capacity_limit: int = 5
 
+    # 20x20 Map Config (Default)
     world_grid_size: int = 20
     station_locs: tuple[tuple[float, float], ...] = (
          (3, 3),
@@ -28,6 +29,25 @@ class EnvConfig:
          (5, 17),
          (17, 5),
      )
+
+    # 30x30 Map Config (Commented out)
+    # world_grid_size: int = 30
+    # station_locs: tuple[tuple[float, float], ...] = (
+    #     (5, 5),     # Bottom-Left
+    #     (25, 25),   # Top-Right
+    #     (5, 25),    # Top-Left
+    #     (25, 5),    # Bottom-Right
+    #     (15, 15),   # Center
+    #     (15, 5),    # Bottom-Center
+    #     (15, 25),   # Top-Center
+    #     (5, 15),    # Left-Center
+    #     (25, 15),   # Right-Center
+    # )
+    # shop_locs: tuple[tuple[float, float], ...] = (
+    #     (2, 2), (28, 28), (2, 28), (28, 2),  # Corners
+    #     (10, 2), (2, 10), (20, 28), (28, 20), # Near corners
+    #     (15, 2), (2, 15), (15, 28), (28, 15), # Edges
+    # )
     
 
     n_riders: int = 30
