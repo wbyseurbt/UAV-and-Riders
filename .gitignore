@@ -9,6 +9,7 @@
 !uavriders/
 !uavriders/**
 !PROJECT_LOGIC_DOCUMENTATION.md
+!requirements.md
 
 __pycache__/
 *.py[cod]
