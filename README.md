@@ -1,177 +1,138 @@
-# 环境安装
-最少依赖（训练 + TensorBoard）：
+# UAV-and-Riders
+
+基于强化学习的无人机-骑手协同配送系统。在 20×20 网格世界中，RL 智能体学习调度 30 个骑手和 25 架无人机（分布在 5 个中转站），完成从商铺到终点的订单配送。
+
+## 快速开始
+
+### 安装
 
 ```bash
-pip install -U stable-baselines3 tensorboard gymnasium
+conda create -n RL python=3.10 -y
+conda activate RL
+pip install gymnasium numpy "stable-baselines3[extra]" matplotlib tensorboard torch
 ```
 
-渲染回放需要 matplotlib：
+### 训练
 
 ```bash
-pip install -U matplotlib
+python train.py --iters 100
 ```
 
-# 运行方式
-## 训练（SB3 / PPO 单智能体）
-推荐用 `train.py`（只是一个入口包装，参数与 `scripts/sb3/train_ppo.py` 完全一致）：
+### 渲染回放
 
 ```bash
-python train.py --iters 100 --max_steps 200 --seed 0
+python run.py --model ./logs/ppo/<run_time>/final_model.zip
 ```
 
-### 训练步数怎么控制？
-本项目用 `--iters` 控制训练迭代次数，每次迭代的采样步数为：
+## 训练模式
 
-```
-每迭代步数 = n_steps * n_envs
-总步数 = iters * n_steps * n_envs
-```
+### CPU 多进程（默认）
 
-其中：
-- `n_steps`：PPO 每个环境每次 rollout 的步数（默认 2048），rollout就是让当前策略在环境中实际运行一段时间，收集一段连续的交互数据
-- `n_envs`：并行环境数量（默认自动取 CPU 核心数；见下文“环境并行”）
-
-注意：
-- `max_steps`： 是每个环境运行的最大步数，不是总步数。
-
-
-### 环境并行（默认开启）
-默认使用多进程并行环境（`SubprocVecEnv`）：
-- `--n_envs` 默认是 `0`，表示自动取 `CPU 核心数`
-
-常用示例（显式指定 16 个并行环境）：
+使用 `SubprocVecEnv`，每个环境独立进程：
 
 ```bash
 python train.py --n_envs 16
 ```
 
-### 用 GPU 训练（4090）
-强制把网络放到 GPU 上训练：
+### GPU 向量化
+
+使用 `TorchVecEnv` + `GpuPPO`，所有环境在 GPU 上批量运算，数据全程驻留显存：
 
 ```bash
-
+python train.py --vec_env torch --device cuda --n_envs 256 --n_steps 1024
 ```
 
-说明：
-- PPO + `MlpPolicy` 通常瓶颈在环境 step 与小网络计算，GPU 利用率可能不高（SB3 会提示这一点）
-- 脚本的 `--device auto` 在 `MlpPolicy` 时会默认选择 CPU；想用 GPU 就显式 `--device cuda`
+> 相比 CPU 16 进程，GPU 256 环境可达 **6.5x** 端到端加速。
 
-### 想让 GPU 更“忙”一点
-可以加大网络与每次更新的计算量（示例）：
+## PPO 参数说明
+
+### 训练流程
+
+```
+n_envs 个并行环境 → 每个采样 n_steps 步 → 得到 rollout (n_envs × n_steps 条数据)
+→ 切成 batch_size 大小的 mini-batch → 训练 n_epochs 轮 → 更新策略 → 重复 iters 次
+```
+
+总训练步数 = `iters × n_envs × n_steps`
+
+### 关键参数
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `--iters` | 100 | 训练迭代次数 |
+| `--n_envs` | 0 (=CPU核数) | 并行环境数量 |
+| `--n_steps` | 2048 | 每环境每次 rollout 的步数 |
+| `--max_steps` | 1024 | 单个 episode 最大步数 |
+| `--batch_size` | 0 (=全量) | mini-batch 大小；`0` 表示 `n_envs × n_steps` |
+| `--n_epochs` | 10 | 每次 rollout 数据的训练轮数 |
+| `--learning_rate` | 3e-4 | 学习率 |
+| `--gamma` | 0.99 | 折扣因子，越大越重视长期收益 |
+| `--gae_lambda` | 0.95 | GAE 平滑系数，平衡偏差和方差 |
+| `--clip_range` | 0.2 | PPO 策略裁剪范围，限制单次更新幅度 |
+| `--ent_coef` | 0.0 | 熵系数，越大鼓励更多探索 |
+| `--vf_coef` | 0.5 | 价值函数损失权重 |
+| `--max_grad_norm` | 0.5 | 梯度裁剪阈值，防止梯度爆炸 |
+| `--net_arch` | "" (=64,64) | 网络隐藏层，如 `256,256` |
+| `--vec_env` | subproc | 环境类型：`dummy` / `subproc` / `torch` |
+| `--device` | auto | 训练设备：`cpu` / `cuda` / `auto` |
+
+### 参数调优建议
+
+- **加快采样**：增大 `--n_envs`（CPU 用 16-32，GPU 用 128-512）
+- **稳定训练**：减小 `--learning_rate`（如 1e-4），增大 `--n_steps`
+- **鼓励探索**：增大 `--ent_coef`（如 0.01）
+- **增强网络**：`--net_arch 256,256` 或 `512,512`
+
+## 输出结构
+
+```
+logs/ppo/<run_time>/
+├── final_model.zip              # 最终模型
+├── checkpoints/iter_XXXX.zip    # 每 save_every_iters 轮保存
+└── tb_iter/                     # TensorBoard 日志
+```
+
+查看训练曲线：
 
 ```bash
-python train.py --device cuda --n_envs 16 --n_steps 4096 --net_arch 512,512 --batch_size 0
+tensorboard --logdir ./logs/ppo/<run_time>/
 ```
 
-可调 PPO 关键参数（完整参数列表见 `python train.py --help`）：
-- `--n_steps`、`--batch_size`（`0` 表示自动匹配 `n_steps*n_envs`）、`--n_epochs`
-- `--learning_rate`、`--gamma`、`--gae_lambda`、`--clip_range`
-- `--ent_coef`、`--vf_coef`、`--max_grad_norm`
-- `--net_arch`（例如 `256,256`）
+主要指标：`reward_components/*`（各奖励分量）、`rollout/ep_rew_mean`（回合平均奖励）
 
-### 训练输出与模型文件
-训练日志目录默认是 `./logs`，最终结构类似：
-- `./logs/ppo/<run_time>/tb_iter/`：TensorBoard events（横轴 step=iteration）
-- `./logs/ppo/<run_time>/final_model.zip`：最终模型
-- `./logs/ppo/<run_time>/checkpoints/iter_XXXX.zip`：按迭代保存的 checkpoint（由 `--save_every_iters` 控制）
-
-## TensorBoard（查看奖励分量）
+## 渲染回放
 
 ```bash
-tensorboard --logdir ./logs/ppo/<训练时间>/
+# 窗口播放
+python run.py --model ./logs/ppo/<run_time>/final_model.zip
+
+# 导出视频
+python scripts/sb3/render_rollout.py --model ./logs/ppo/<run_time>/final_model.zip --save
+
+# 指定时长和帧率
+python scripts/sb3/render_rollout.py --model <model_path> --save --duration 30 --fps 30
 ```
 
-在 Scalars 里查看：
-- `reward_components/*`
+视频自动保存到 `./video/`，命名格式：`<run_time>_iter<N>_<序号>.mp4`
 
-## 渲染回放（SB3 模型 .zip）
-从 `./logs/ppo/<训练时间>/final_model.zip` 加载：
+## 项目结构
 
-```bash
-python run.py --model ./logs/ppo/<训练时间>/final_model.zip --max_steps 200 --seed 0
 ```
-
-也可以直接运行脚本：
-
-```bash
-python scripts/sb3/render_rollout.py --model ./logs/ppo/<训练时间>/final_model.zip --max_steps 200 --seed 0
+├── train.py                     # 训练入口
+├── run.py                       # 渲染入口
+├── uavriders/
+│   ├── configs/env_config.py    # 环境配置（地图、速度、数量等）
+│   ├── envs/
+│   │   ├── single_env.py        # Gymnasium 单环境
+│   │   └── torch_vec_env.py     # GPU 批量向量化环境
+│   ├── sim/                     # 仿真逻辑（骑手、无人机、订单、站点）
+│   ├── rl/                      # 观测构建、奖励计算
+│   └── viz/                     # matplotlib 可视化
+└── scripts/sb3/
+    ├── train_ppo.py             # PPO 训练主逻辑
+    ├── gpu_ppo.py               # GPU 原生 PPO（消除 CPU↔GPU 传输）
+    ├── render_rollout.py        # 回放渲染
+    ├── timing_utils.py          # 训练计时工具
+    ├── tensorboard.py           # TensorBoard 回调
+    └── savemodel.py             # 模型保存回调
 ```
-
-如果你在无图形界面的服务器/容器里（租用 GPU 常见），请用 `--save` 导出文件：
-
-```bash
-python scripts/sb3/render_rollout.py --model ./logs/ppo/<训练时间>/final_model.zip --save ./rollout.mp4
-```
-
-也可以只写 `--save`，脚本会自动保存到项目根目录下的 `./video/`，并自动命名：
-- 文件名格式：`<训练时间>_iter<iter>_<序号>.mp4`
-- 训练时间来自模型路径里的 `logs/ppo/<训练时间>/...`
-- `<iter>` 对应 `final_model.zip` 的 `final`，或 checkpoint 的 `iter_XXXX.zip` 的 `XXXX`
-- 同一个模型多次导出会自动把 `<序号>` 递增
-
-示例：
-
-```bash
-python scripts/sb3/render_rollout.py --model ./logs/ppo/20260210-232140/final_model.zip --save
-```
-
-### 控制视频时长
-导出文件时，可以用 `--duration`（单位秒）直接控制时长；也可以用 `--frames` 控制总帧数：
-- `duration ≈ frames / fps`
-- `fps` 默认从 `interval` 推导（约等于 `1000/interval`），也可以手动 `--fps`
-
-示例（导出 30 秒，30fps）：
-
-```bash
-python scripts/sb3/render_rollout.py --model ./logs/ppo/<训练时间>/final_model.zip --save --duration 30 --fps 30
-```
-
-如果你在无图形界面的服务器/容器里（租用 GPU 常见），请用 `--save` 导出文件：
-
-```bash
-python scripts/sb3/render_rollout.py --model ./logs/ppo/<训练时间>/final_model.zip --save ./rollout.mp4
-```
-
-也可以只写 `--save`，脚本会自动保存到项目根目录下的 `./video/`，并自动命名：
-- 文件名格式：`<训练时间>_iter<iter>_<序号>.mp4`
-- 训练时间来自模型路径里的 `logs/ppo/<训练时间>/...`
-- `<iter>` 对应 `final_model.zip` 的 `final`，或 checkpoint 的 `iter_XXXX.zip` 的 `XXXX`
-- 同一个模型多次导出会自动把 `<序号>` 递增
-
-示例：
-
-```bash
-python scripts/sb3/render_rollout.py --model ./logs/ppo/20260210-232140/final_model.zip --save
-```
-
-### 控制视频时长
-导出文件时，可以用 `--duration`（单位秒）直接控制时长；也可以用 `--frames` 控制总帧数：
-- `duration ≈ frames / fps`
-- `fps` 默认从 `interval` 推导（约等于 `1000/interval`），也可以手动 `--fps`
-
-示例（导出 30 秒，30fps）：
-
-```bash
-python scripts/sb3/render_rollout.py --model ./logs/ppo/<训练时间>/final_model.zip --save --duration 30 --fps 30
-```
- 
-run_baseline.py 是trae写的纯骑手基准模型。
-创建虚拟环境
-conda create -n uav python=3.10 -y
-conda activate uav
-requirements.txt是所有需要配置的环境 
-pip install -r requirements.txt
-
-输出示例
-[Iteration 1] Starting Rollout Collection...           <-- 新增：提示开始采集
-[Timing] Total Data Collection Time: 12.5s             <-- 新增：采集耗时
-[Timing] -> Simulation Time: 8.0s                      <-- 新增：仿真耗时
----------------------------------
-| rollout/           |          |
-|    ep_len_mean     | 200      |                      <-- 原有：SB3 训练指标（完全保留）
-|    ep_rew_mean     | -50.2    |
-| time/              |          |
-|    fps             | 120      |
----------------------------------
-[Iteration 1] Starting Training...                     <-- 新增：提示开始训练
-[Timing] Network Training Time: 2.1s                   <-- 新增：训练耗时

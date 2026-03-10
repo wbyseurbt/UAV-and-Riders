@@ -62,14 +62,14 @@ def main():
         dest="vec_env",
         type=str,
         default="subproc",
-        choices=("dummy", "subproc"),
+        choices=("dummy", "subproc", "torch"),
     )
     parser.add_argument(
         "--start_method",
         "--start-method",
         dest="start_method",
         type=str,
-        default="forkserver",
+        default="spawn",
         choices=("forkserver", "spawn", "fork"),
     )
     parser.add_argument(
@@ -84,7 +84,7 @@ def main():
         default="auto",
         choices=("auto", "cpu", "cuda"),
     )
-    parser.add_argument("--n_steps", "--n-steps", dest="n_steps", type=int, default=2048)
+    parser.add_argument("--n_steps", "--n-steps", dest="n_steps", type=int, default=2048)       
     parser.add_argument("--batch_size", "--batch-size", dest="batch_size", type=int, default=0)
     parser.add_argument("--n_epochs", "--n-epochs", dest="n_epochs", type=int, default=10)
     parser.add_argument("--learning_rate", "--learning-rate", dest="learning_rate", type=float, default=3e-4)
@@ -113,18 +113,33 @@ def main():
     if requested_n_envs <= 0:
         requested_n_envs = max(1, int(os.cpu_count() or 1))
 
-    vec_env = make_vec_env(
-        n_envs=requested_n_envs,
-        max_steps=int(args.max_steps),
-        seed=int(args.seed),
-        vec_env_type=str(args.vec_env),
-        start_method=str(args.start_method),
-    )
+    vec_env_type = str(args.vec_env)
 
     policy = str(args.policy).strip() or "MlpPolicy"
     device = str(args.device).strip() or "auto"
-    if device == "auto" and policy == "MlpPolicy":
-        device = "cpu"
+
+    if vec_env_type == "torch":
+        from uavriders.envs.torch_vec_env import TorchVecEnv
+
+        if device == "auto":
+            import torch
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        vec_env = TorchVecEnv(
+            num_envs=requested_n_envs,
+            max_steps=int(args.max_steps),
+            seed=int(args.seed),
+            device=device,
+        )
+    else:
+        vec_env = make_vec_env(
+            n_envs=requested_n_envs,
+            max_steps=int(args.max_steps),
+            seed=int(args.seed),
+            vec_env_type=vec_env_type,
+            start_method=str(args.start_method),
+        )
+        if device == "auto" and policy == "MlpPolicy":
+            device = "cpu"
 
     policy_kwargs: dict = {}
     net_arch = parse_int_list(args.net_arch)
@@ -137,7 +152,7 @@ def main():
     if batch_size <= 0:
         batch_size = max(1, n_steps * num_envs)
 
-    model = TimedPPO(
+    model_kwargs = dict(
         policy=policy,
         env=vec_env,
         verbose=1,
@@ -155,6 +170,12 @@ def main():
         max_grad_norm=float(args.max_grad_norm),
         policy_kwargs=policy_kwargs if policy_kwargs else None,
     )
+
+    if vec_env_type == "torch":
+        from scripts.sb3.gpu_ppo import GpuPPO
+        model = GpuPPO(gpu_env=vec_env, **model_kwargs)
+    else:
+        model = TimedPPO(**model_kwargs)
 
     timesteps_per_iter = int(getattr(model, "n_steps", 2048)) * int(getattr(vec_env, "num_envs", 1))
     tb_iter_dir = os.path.join(run_dir, "tb_iter")
