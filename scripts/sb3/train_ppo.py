@@ -33,7 +33,7 @@ def parse_int_list(value: str) -> list[int]:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--iters", type=int, default=100)
+    parser.add_argument("--iters", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--n_envs", "--n-envs", dest="n_envs", type=int, default=1024)
     parser.add_argument("--max_steps", "--max-steps", dest="max_steps", type=int, default=1024)
@@ -56,6 +56,8 @@ def main():
     parser.add_argument("--run_time", "--run-time", dest="run_time", type=str, default="")
     parser.add_argument("--root_logdir", "--root-logdir", dest="root_logdir", type=str, default="./logs")
     parser.add_argument("--save_every_iters", "--save-every-iters", dest="save_every_iters", type=int, default=10)
+    parser.add_argument("--no_compile", "--no-compile", dest="no_compile", action="store_true", default=False,
+                        help="Disable torch.compile (useful for debugging or if compilation fails)")
     args = parser.parse_args()
 
     run_time = str(args.run_time).strip() or datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -65,6 +67,8 @@ def main():
     final_model_path = os.path.join(run_dir, "final_model.zip")
     checkpoints_dir = os.path.join(run_dir, "checkpoints")
     os.makedirs(checkpoints_dir, exist_ok=True)
+
+    torch.set_float32_matmul_precision("high")
 
     n_envs = int(args.n_envs)
     if n_envs <= 0:
@@ -79,6 +83,7 @@ def main():
         max_steps=int(args.max_steps),
         seed=int(args.seed),
         device=device,
+        compile=not args.no_compile,
     )
 
     policy_kwargs: dict = {}

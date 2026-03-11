@@ -31,6 +31,7 @@ class TorchVecEnv(VecEnv):
         device: str = "cuda",
         config: EnvConfig | dict | None = None,
         max_orders: int = 500,
+        compile: bool = True,
     ):
         if config is None:
             self.cfg = default_config()
@@ -140,6 +141,15 @@ class TorchVecEnv(VecEnv):
 
         self._actions: np.ndarray | None = None
         self._reset_all()
+
+        # Optional torch.compile (kernel fusion). Safe fallback to eager.
+        self._compile = bool(compile)
+        if self._compile:
+            try:
+                self._step_impl = torch.compile(self._step_impl, fullgraph=False)
+            except Exception as e:
+                print(f"[TorchVecEnv] torch.compile failed, using eager mode: {e}")
+                self._compile = False
 
     def _reset_all(self):
         mask = torch.ones(self.num_envs, dtype=torch.bool, device=self.device)

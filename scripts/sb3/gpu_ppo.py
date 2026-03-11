@@ -155,6 +155,19 @@ class GpuPPO(TimedPPO):
         self._last_ep_starts_t: torch.Tensor | None = None
         self._cb_locals: dict = {"self": self}
 
+        if getattr(gpu_env, '_compile', True):
+            try:
+                self._fused_forward = torch.compile(
+                    self._fused_forward,
+                    fullgraph=False,
+                )
+                self._fused_evaluate = torch.compile(
+                    self._fused_evaluate,
+                    fullgraph=False,
+                )
+            except Exception as e:
+                print(f"[GpuPPO] torch.compile not available: {e}")
+
     def _excluded_save_params(self) -> list[str]:
         """Prevent SB3 from trying to JSON-serialize GPU tensors / env / buffer."""
         excluded = super()._excluded_save_params()
@@ -166,6 +179,8 @@ class GpuPPO(TimedPPO):
             "_empty_infos",
             "_empty_dones",
             "_cb_locals",
+            "_fused_forward",
+            "_fused_evaluate",
         ])
         return excluded
 
@@ -173,11 +188,16 @@ class GpuPPO(TimedPPO):
     # CUDA warmup — prime allocator caches before real training
     # ------------------------------------------------------------------
     def _warmup_cuda(self, gpu):
-        """Run a few dummy forward+step cycles to prime the CUDA allocator."""
-        print("[GpuPPO] Warming up CUDA …")
+        """Run dummy forward+step cycles to trigger torch.compile and prime CUDA."""
+        compile_on = getattr(gpu, '_compile', False)
+        if compile_on:
+            print("[GpuPPO] Warming up CUDA + torch.compile (first run compiles kernels, may take 1-3 min) …")
+        else:
+            print("[GpuPPO] Warming up CUDA …")
         self.policy.set_training_mode(False)
         obs = gpu._build_obs()
-        for _ in range(20):
+        n_warmup = 40 if compile_on else 20
+        for _ in range(n_warmup):
             actions, _, _ = self._fused_forward(obs)
             obs, _, _, _, _, _ = gpu.step_tensor(actions)
         torch.cuda.synchronize()
