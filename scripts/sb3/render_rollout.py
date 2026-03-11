@@ -1,3 +1,4 @@
+"""Render rollout using TorchVecEnv (single env) and MplRenderer."""
 import argparse
 import os
 import sys
@@ -6,11 +7,12 @@ from pathlib import Path
 import matplotlib
 import matplotlib.animation as animation
 
-from stable_baselines3 import PPO
-
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 
-from uavriders.envs.single_env import DeliveryUAVSingleAgentEnv
+from stable_baselines3 import PPO
+
+from uavriders.envs.torch_vec_env import TorchVecEnv
+from uavriders.envs.torch.render_view import wrap_torch_env_for_render
 from uavriders.viz.mpl_renderer import MplRenderer
 
 
@@ -66,14 +68,14 @@ def main():
     parser.add_argument("--duration", type=float, default=60.0)
     parser.add_argument("--save", nargs="?", const="auto", default="", type=str)
     parser.add_argument("--dpi", type=int, default=120)
+    parser.add_argument("--device", type=str, default="cpu")
     args = parser.parse_args()
 
     if not os.path.exists(args.model):
         print(f"Error: 找不到模型文件: {args.model}")
         sys.exit(1)
 
-    # 尝试配置 ffmpeg
-    if not animation.writers.is_available("ffmpeg"):
+    if animation.writers.is_available("ffmpeg"):
         try:
             import imageio_ffmpeg
             ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
@@ -92,7 +94,14 @@ def main():
         print("Error: 当前环境没有可用的图形界面（DISPLAY 为空），请使用 --save 导出为 mp4/gif")
         sys.exit(2)
 
-    env = DeliveryUAVSingleAgentEnv(max_steps=args.max_steps, seed=args.seed)
+    torch_env = TorchVecEnv(
+        num_envs=1,
+        max_steps=args.max_steps,
+        seed=args.seed,
+        device=args.device,
+    )
+    env = wrap_torch_env_for_render(torch_env, env_index=0)
+
     model = PPO.load(args.model)
     renderer = MplRenderer()
 
@@ -112,27 +121,11 @@ def main():
         obs, _, terminated, truncated, _ = env.step(action)
         renderer.render(env)
         if terminated or truncated:
-            # Print stats report before resetting
-            print("\n" + "="*40)
+            print("\n" + "=" * 40)
             print("  EPISODE DELIVERY REPORT")
-            print("="*40)
+            print("=" * 40)
             print(f"Total Delivered: {env.data.stats_total_delivered}")
-            if env.data.stats_total_delivered > 0:
-                uav_count = env.data.stats_delivered_by_uav
-                rider_count = env.data.stats_delivered_by_rider_only
-                
-                # Calculate average times
-                avg_time_all = env.data.stats_total_delivery_time / env.data.stats_total_delivered
-                avg_time_uav = env.data.stats_uav_delivery_time_sum / uav_count if uav_count > 0 else 0.0
-                avg_time_rider = env.data.stats_rider_delivery_time_sum / rider_count if rider_count > 0 else 0.0
-                
-                print(f"By UAV:   {uav_count} ({uav_count/env.data.stats_total_delivered*100:.1f}%) | Avg Time: {avg_time_uav:.2f} steps")
-                print(f"By Rider: {rider_count} ({rider_count/env.data.stats_total_delivered*100:.1f}%) | Avg Time: {avg_time_rider:.2f} steps")
-                print(f"Overall Avg Time: {avg_time_all:.2f} steps")
-            else:
-                print("No orders delivered.")
-            print("="*40 + "\n")
-            
+            print("=" * 40 + "\n")
             obs, _ = env.reset(seed=args.seed)
         return renderer.ax
 
@@ -144,7 +137,6 @@ def main():
         os.makedirs(os.path.dirname(os.path.abspath(save_path)) or ".", exist_ok=True)
         if ext == ".gif":
             from matplotlib.animation import PillowWriter
-
             ani.save(save_path, writer=PillowWriter(fps=fps), dpi=int(args.dpi))
         else:
             if ext == "":

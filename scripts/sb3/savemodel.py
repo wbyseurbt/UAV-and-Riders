@@ -1,5 +1,7 @@
+import gc
 import os
 
+import torch
 from stable_baselines3.common.callbacks import BaseCallback
 
 
@@ -28,5 +30,18 @@ class SaveByIterationCallback(BaseCallback):
             return
         os.makedirs(self.checkpoints_dir, exist_ok=True)
         iter_path = os.path.join(self.checkpoints_dir, f"iter_{current_iter:04d}.zip")
-        self.model.save(iter_path)
+
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+
+        try:
+            self.model.save(iter_path)
+        except RuntimeError as e:
+            if "out of memory" in str(e).lower() or "OOM" in str(e):
+                if self.verbose >= 1:
+                    print(f"[SaveByIteration] OOM 保存 checkpoint 失败 (iter {current_iter})，可增大 --save_every_iters 或减小 --batch_size")
+                raise
+            raise
         self._last_saved_iter = current_iter

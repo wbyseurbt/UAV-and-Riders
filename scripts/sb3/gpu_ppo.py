@@ -140,7 +140,6 @@ class GpuPPO(TimedPPO):
             gae_lambda=self.gae_lambda,
         )
 
-        # Fused MultiDiscrete: all sub-actions must have equal nvec
         nvec = gpu_env.action_space.nvec
         assert len(set(nvec)) == 1, (
             f"Fused sampling requires equal nvec, got {nvec}"
@@ -155,6 +154,20 @@ class GpuPPO(TimedPPO):
         self._last_obs_t: torch.Tensor | None = None
         self._last_ep_starts_t: torch.Tensor | None = None
         self._cb_locals: dict = {"self": self}
+
+    def _excluded_save_params(self) -> list[str]:
+        """Prevent SB3 from trying to JSON-serialize GPU tensors / env / buffer."""
+        excluded = super()._excluded_save_params()
+        excluded.extend([
+            "_gpu_env",
+            "_gpu_buf",
+            "_last_obs_t",
+            "_last_ep_starts_t",
+            "_empty_infos",
+            "_empty_dones",
+            "_cb_locals",
+        ])
+        return excluded
 
     # ------------------------------------------------------------------
     # CUDA warmup — prime allocator caches before real training
