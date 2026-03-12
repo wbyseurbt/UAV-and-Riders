@@ -7,6 +7,9 @@ from pathlib import Path
 import matplotlib
 import matplotlib.animation as animation
 
+import torch
+import sys
+
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 from stable_baselines3 import PPO
@@ -71,6 +74,9 @@ def main():
     parser.add_argument("--device", type=str, default="cpu")
     args = parser.parse_args()
 
+    if torch.cuda.is_available():
+        args.device = "cuda"
+
     if not os.path.exists(args.model):
         print(f"Error: 找不到模型文件: {args.model}")
         sys.exit(1)
@@ -99,10 +105,11 @@ def main():
         max_steps=args.max_steps,
         seed=args.seed,
         device=args.device,
+        compile=False,  # Disable torch.compile for rendering to avoid MSVC requirement
     )
     env = wrap_torch_env_for_render(torch_env, env_index=0)
 
-    model = PPO.load(args.model)
+    model = PPO.load(args.model, device=args.device)
     renderer = MplRenderer()
 
     obs, _ = env.reset(seed=args.seed)
@@ -119,13 +126,40 @@ def main():
         nonlocal obs
         action, _ = model.predict(obs, deterministic=True)
         obs, _, terminated, truncated, _ = env.step(action)
+        
+        # Debug print every 10 frames
+        if _frame % 10 == 0:
+             # Access raw torch env via adapter
+             raw_env = env._env
+             idx = env._idx
+             n_active = raw_env.o_active[idx].sum().item()
+             n_carrying = (raw_env.r_carrying[idx] >= 0).sum().item()
+             step_del = raw_env.delivered[idx].item()
+             print(f"Step {_frame}: Active={n_active}, Carrying={n_carrying}, StepDel={step_del}, TotalDel={env._total_delivered}")
+
         renderer.render(env)
         if terminated or truncated:
-            print("\n" + "=" * 40)
-            print("  EPISODE DELIVERY REPORT")
-            print("=" * 40)
-            print(f"Total Delivered: {env.data.stats_total_delivered}")
-            print("=" * 40 + "\n")
+            # Use accumulators directly from Adapter
+            total = env._total_delivered
+            uav_launches = env._total_uav_launched
+            
+            rider_only = env._stats_rider_only_count
+            uav_assist = env._stats_uav_assist_count
+            rider_time_sum = env._stats_rider_only_time_sum
+            uav_time_sum = env._stats_uav_assist_time_sum
+            
+            avg_rider_time = rider_time_sum / rider_only if rider_only > 0 else 0
+            avg_uav_time = uav_time_sum / uav_assist if uav_assist > 0 else 0
+
+            print("\n" + "=" * 60)
+            print(f"  EPISODE SUMMARY (Steps: {args.max_steps})")
+            print("=" * 60)
+            print(f"Total Delivered:      {total}")
+            print(f"  - Rider Only:       {rider_only:<5} (Avg Time: {avg_rider_time:.2f})")
+            print(f"  - UAV Assisted:     {uav_assist:<5} (Avg Time: {avg_uav_time:.2f})")
+            print("-" * 60)
+            print("=" * 60 + "\n")
+            
             obs, _ = env.reset(seed=args.seed)
         return renderer.ax
 

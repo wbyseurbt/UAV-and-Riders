@@ -42,9 +42,9 @@ def main():
                         choices=("MlpPolicy", "CnnPolicy", "MultiInputPolicy"))
     parser.add_argument("--device", type=str, default="cuda", choices=("auto", "cpu", "cuda"))
     parser.add_argument("--n_steps", "--n-steps", dest="n_steps", type=int, default=1024)
-    parser.add_argument("--batch_size", "--batch-size", dest="batch_size", type=int, default=65536, #65536=2GB
+    parser.add_argument("--batch_size", "--batch-size", dest="batch_size", type=int, default=16384, #65536=2GB
                         help="minibatch size for PPO update (0=full buffer). 32GB 显存建议 16384~32768")
-    parser.add_argument("--n_epochs", "--n-epochs", dest="n_epochs", type=int, default=10)
+    parser.add_argument("--n_epochs", "--n-epochs", dest="n_epochs", type=int, default=5)
     parser.add_argument("--learning_rate", "--learning-rate", dest="learning_rate", type=float, default=3e-4)
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--gae_lambda", "--gae-lambda", dest="gae_lambda", type=float, default=0.95)
