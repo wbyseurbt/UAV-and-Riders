@@ -121,6 +121,7 @@ class TorchVecEnv(VecEnv):
         self.delivered = torch.zeros(B, dtype=torch.long, device=dev)
         self.uav_launched = torch.zeros(B, dtype=torch.long, device=dev)
         self.uav_balance = torch.zeros(B, dtype=torch.float32, device=dev)
+        self.uav_optimal_dispatch = torch.zeros(B, dtype=torch.long, device=dev)
         self.handoff = torch.zeros(B, dtype=torch.long, device=dev)
         self.handoff_opt = torch.zeros(B, dtype=torch.long, device=dev)
 
@@ -201,6 +202,7 @@ class TorchVecEnv(VecEnv):
         self.delivered[idx] = 0
         self.uav_launched[idx] = 0
         self.uav_balance[idx] = 0
+        self.uav_optimal_dispatch[idx] = 0
         self.handoff[idx] = 0
         self.handoff_opt[idx] = 0
 
@@ -316,6 +318,7 @@ class TorchVecEnv(VecEnv):
         self.delivered.zero_()
         self.uav_launched.zero_()
         self.uav_balance.zero_()
+        self.uav_optimal_dispatch.zero_()
         self.handoff.zero_()
         self.handoff_opt.zero_()
 

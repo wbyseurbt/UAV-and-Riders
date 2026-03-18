@@ -134,6 +134,8 @@ def handle_rider_arrivals(env) -> None:
     _scatter_order_1d(env.o_s1, carry_safe, d_case, which_st)
     ATS_T = torch.tensor(AT_STATION, device=dev, dtype=env.o_status.dtype).expand(B, R)
     _scatter_order_1d(env.o_status, carry_safe, d_case, ATS_T)
+    # Reset wait timer when arriving at station so timeout counts from arrival
+    _scatter_order_1d(env.o_twait, carry_safe, d_case, torch.zeros(B, R, dtype=torch.long, device=dev))
     env.r_carrying = torch.where(d_case, -1, env.r_carrying)
     env.r_has_tgt = env.r_has_tgt & ~d_case
     env.r_target = torch.where(d_case.unsqueeze(-1), torch.zeros_like(env.r_target), env.r_target)

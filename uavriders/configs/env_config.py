@@ -10,47 +10,47 @@ class EnvConfig:
     uav_speed: float = 2.5
     uav_capacity_limit: int = 5
 
-    # 20x20 Map Config (Default)
-    world_grid_size: int = 20
-    station_locs: tuple[tuple[float, float], ...] = (
-         (3, 3),
-        (17, 17),
-         (3, 17),
-         (17, 3),
-         (10.0, 10.0),
-     )
-    shop_locs: tuple[tuple[float, float], ...] = (
-         (0, 2),
-         (2, 0),
-         (18, 20),
-         (20, 18),
-         (15, 3),
-         (3, 15),
-         (5, 17),
-         (17, 5),
-     )
-
-    # 30x30 Map Config (Commented out)
-    # world_grid_size: int = 30
+    # 20x20 Map Config (Commented out)
+    # world_grid_size: int = 20
     # station_locs: tuple[tuple[float, float], ...] = (
-    #     (5, 5),     # Bottom-Left
-    #     (25, 25),   # Top-Right
-    #     (5, 25),    # Top-Left
-    #     (25, 5),    # Bottom-Right
-    #     (15, 15),   # Center
-    #     (15, 5),    # Bottom-Center
-    #     (15, 25),   # Top-Center
-    #     (5, 15),    # Left-Center
-    #     (25, 15),   # Right-Center
-    # )
+    #      (3, 3),
+    #     (17, 17),
+    #      (3, 17),
+    #      (17, 3),
+    #      (10.0, 10.0),
+    #  )
     # shop_locs: tuple[tuple[float, float], ...] = (
-    #     (2, 2), (28, 28), (2, 28), (28, 2),  # Corners
-    #     (10, 2), (2, 10), (20, 28), (28, 20), # Near corners
-    #     (15, 2), (2, 15), (15, 28), (28, 15), # Edges
-    # )
-    
+    #      (0, 2),
+    #      (2, 0),
+    #      (18, 20),
+    #      (20, 18),
+    #      (15, 3),
+    #      (3, 15),
+    #      (5, 17),
+    #      (17, 5),
+    #  )
 
-    n_riders: int = 30
+    # 30x30 Map Config (Active)
+    world_grid_size: int = 30
+    station_locs: tuple[tuple[float, float], ...] = (
+        (5, 5),     # Bottom-Left
+        (25, 25),   # Top-Right
+        (5, 25),    # Top-Left
+        (25, 5),    # Bottom-Right
+        (15, 15),   # Center
+        (15, 5),    # Bottom-Center
+        (15, 25),   # Top-Center
+        (5, 15),    # Left-Center
+        (25, 15),   # Right-Center
+    )
+    shop_locs: tuple[tuple[float, float], ...] = (
+        (2, 2), (28, 28), (2, 28), (28, 2),  # Corners
+        (10, 2), (2, 10), (20, 28), (28, 20), # Near corners
+        (15, 2), (2, 15), (15, 28), (28, 15), # Edges
+    )
+    
+    # Increased riders for larger map
+    n_riders: int = 50
     n_uav_each_station: int = 5
 
     station_max_uavs: int = 10

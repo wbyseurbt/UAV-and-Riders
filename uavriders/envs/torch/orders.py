@@ -10,7 +10,7 @@ def generate_orders(env) -> None:
     """Generate new orders (vectorised over envs, sync-free)."""
     B, R, dev = env.num_envs, env.R, env.device
 
-    should_gen = torch.rand(B, device=dev) < 0.1
+    should_gen = torch.rand(B, device=dev) < 0.2
     free = env.r_carrying < 0  # (B, R)
     has_free = free.any(dim=-1)  # per-env reduction, no global sync
     gen = should_gen & has_free & (env.o_count < env.max_orders)

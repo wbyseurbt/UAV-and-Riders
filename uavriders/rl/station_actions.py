@@ -59,8 +59,39 @@ def process_station_actions(env, acts: torch.Tensor) -> None:
 
     cur_dist = (cur_pos - o_end_e).abs().sum(dim=-1)        # (B, S, Mp)
     tgt_dist = (tgt_pos_e - o_end_e).abs().sum(dim=-1)      # (B, S, Mp)
-    candidates = waiting & (tgt_dist < cur_dist)
+    
+    # Relaxed condition: just take ANY waiting order if the agent decided to fly there.
+    # We will use uav_optimal_dispatch_term to reward smart choices.
+    candidates = waiting 
+    
     has_cand = candidates.any(dim=-1)                       # (B, S)
+
+    # ---- Check for optimal dispatch (for reward) ----
+    # Did the agent dispatch the UAV to the ABSOLUTE closest station to the order's destination?
+    
+    # 1. Calculate distance from ALL stations to ALL orders
+    # station_pos: (S, 2) -> (1, S, 1, 2)
+    # o_end: (B, Mp, 2) -> (B, 1, Mp, 2)
+    
+    st_pos_exp = env.station_pos.unsqueeze(0).unsqueeze(2) # (1, S, 1, 2)
+    o_end_exp = env.o_end.unsqueeze(1)                     # (B, 1, Mp, 2)
+    
+    # Manhattan broadcasts to (B, S, Mp, 2) and sums last dim -> (B, S, Mp)
+    dists_to_all = manhattan(st_pos_exp, o_end_exp)        # (B, S, Mp)
+    
+    # Find which station is closest for each order (min over S dim)
+    # best_st_idx shape: (B, Mp)
+    min_dist_to_end, best_st_idx = dists_to_all.min(dim=1) 
+    
+    # 2. Check if chosen target (tidx) matches the best station
+    # tidx: (B, S) -> expand to (B, S, Mp)
+    Mp = best_st_idx.shape[-1]
+    tidx_exp = tidx.unsqueeze(-1).expand(-1, -1, Mp)       # (B, S, Mp)
+    
+    # best_st_idx: (B, Mp) -> expand to (B, S, Mp)
+    best_st_exp = best_st_idx.unsqueeze(1).expand(-1, S, -1) # (B, S, Mp)
+    
+    is_optimal_dispatch = (tidx_exp == best_st_exp)        # (B, S, Mp)
 
     # ---- balance / need heuristic ----
     tgt_uav_at = (u_station_e == tidx_c.unsqueeze(-1)) & (u_state_e != UAV_FLYING)
@@ -90,11 +121,30 @@ def process_station_actions(env, acts: torch.Tensor) -> None:
     env.uav_balance += (should_launch & bal_trigger).float().sum(dim=1)
 
     # ---- top-K order selection (one batched topk) ----
+    # score = torch.where(
+    #     candidates & should_launch.unsqueeze(-1),
+    #     o_twait_e.expand(-1, S, -1),
+    #     -env._big,
+    # )                                                       # (B, S, Mp)
+    
+    # NEW SCORING: Prioritize orders that are optimally dispatched!
+    # If the chosen station (tidx) matches the order's optimal station, give it a HUGE boost.
+    # Otherwise, sort by wait time.
+    
+    # is_optimal_dispatch: (B, S, Mp)
+    
+    wait_score = o_twait_e.expand(-1, S, -1).float() # (B, S, Mp)
+    # Add a huge constant to optimal orders so they always come first
+    optimal_boost = is_optimal_dispatch.float() * 1e6 
+    
+    final_score = wait_score + optimal_boost
+    
     score = torch.where(
         candidates & should_launch.unsqueeze(-1),
-        o_twait_e.expand(-1, S, -1),
+        final_score,
         -env._big,
-    )                                                       # (B, S, Mp)
+    )
+    
     topk_vals, topk_ids = score.topk(K, dim=-1)             # (B, S, K)
     topk_ok = topk_vals > (-env._big + 1)
 
@@ -110,6 +160,12 @@ def process_station_actions(env, acts: torch.Tensor) -> None:
         vk = should_launch & topk_ok[:, :, k]              # (B, S)
         ok = topk_ids[:, :, k]                              # (B, S)
         ok_safe = torch.where(vk, ok, NULL)
+        
+        # Reward calculation: Check if this specific loaded order was dispatched to its optimal station
+        # ok_safe is (B, S), we need to gather from is_optimal_dispatch (B, S, Mp)
+        # expand ok_safe to (B, S, 1) for gather
+        opt_dispatch_k = is_optimal_dispatch.gather(2, ok_safe.unsqueeze(-1)).squeeze(-1) # (B, S)
+        env.uav_optimal_dispatch += (vk & opt_dispatch_k).long().sum(dim=1)
 
         cur_os = env.o_status.gather(1, ok_safe)
         env.o_status.scatter_(1, ok_safe, torch.where(vk, IN_UAV_T.expand_as(cur_os), cur_os))
